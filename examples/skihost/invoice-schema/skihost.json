@@ -1,0 +1,11 @@
+{
+  "name": "invoice-schema",
+  "version": "0.3.1",
+  "type": "prompt",
+  "description": "System prompt and JSON schema for turning invoice text or tables into validated structured data (vendor, dates, line items, tax, totals).",
+  "keywords": ["invoices", "json-schema", "extraction", "accounting", "prompt"],
+  "agents": ["any"],
+  "category": "documents",
+  "license": "MIT",
+  "entry": "prompt.md"
+}

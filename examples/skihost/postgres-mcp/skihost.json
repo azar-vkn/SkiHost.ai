@@ -1,0 +1,19 @@
+{
+  "name": "postgres-mcp",
+  "version": "1.0.0",
+  "type": "mcp-server",
+  "description": "Ready-to-use MCP client config that gives an agent read-only SQL access to a PostgreSQL database (schema inspection and queries).",
+  "keywords": ["postgres", "postgresql", "sql", "database", "mcp"],
+  "agents": ["claude-code", "claude-desktop", "cursor", "any"],
+  "category": "databases",
+  "license": "MIT",
+  "entry": "README.md",
+  "requirements": {
+    "node": ">=18",
+    "env": ["DATABASE_URL"]
+  },
+  "mcp": {
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"]
+  }
+}

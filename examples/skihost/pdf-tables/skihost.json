@@ -1,0 +1,17 @@
+{
+  "name": "pdf-tables",
+  "version": "1.2.0",
+  "type": "skill",
+  "description": "Extract tables from PDF files (invoices, statements, reports) into clean CSV or JSON, page by page.",
+  "keywords": ["pdf", "tables", "extraction", "invoices", "csv", "data"],
+  "agents": ["claude-code", "any"],
+  "category": "documents",
+  "license": "MIT",
+  "entry": "SKILL.md",
+  "requirements": {
+    "python": ">=3.10",
+    "pip": ["pdfplumber>=0.11", "pandas>=2.0"],
+    "env": []
+  },
+  "changelog": "Adds --pages filtering and merges tables that continue across page breaks."
+}

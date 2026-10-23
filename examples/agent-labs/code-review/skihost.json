@@ -1,0 +1,11 @@
+{
+  "name": "code-review",
+  "version": "0.9.0",
+  "type": "skill",
+  "description": "A severity-ranked code review checklist for pull requests: correctness, security, tests, performance and readability, with a findings template.",
+  "keywords": ["code-review", "pull-request", "security", "testing", "quality"],
+  "agents": ["claude-code", "cursor", "any"],
+  "category": "engineering",
+  "license": "MIT",
+  "entry": "SKILL.md"
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Invoice",
+  "type": "object",
+  "required": ["vendor", "invoice_number", "issue_date", "currency", "line_items", "total"],
+  "properties": {
+    "vendor": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "address": { "type": ["string", "null"] },
+        "tax_id": { "type": ["string", "null"] }
+      }
+    },
+    "invoice_number": { "type": ["string", "null"] },
+    "issue_date": { "type": ["string", "null"], "format": "date" },
+    "due_date": { "type": ["string", "null"], "format": "date" },
+    "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+    "line_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description", "amount"],
+        "properties": {
+          "description": { "type": "string" },
+          "quantity": { "type": ["number", "null"] },
+          "unit_price": { "type": ["number", "null"] },
+          "amount": { "type": "number" }
+        }
+      }
+    },
+    "subtotal": { "type": ["number", "null"] },
+    "tax": { "type": ["number", "null"] },
+    "total": { "type": ["number", "null"] },
+    "checks": {
+      "type": "object",
+      "properties": { "totals_match": { "type": "boolean" } }
+    },
+    "notes": { "type": ["string", "null"] }
+  }
+}

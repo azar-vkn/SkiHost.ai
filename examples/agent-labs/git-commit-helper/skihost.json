@@ -1,0 +1,11 @@
+{
+  "name": "git-commit-helper",
+  "version": "1.1.0",
+  "type": "plugin",
+  "description": "Claude Code plugin with /commit and /changelog slash commands that write Conventional Commit messages and release notes from staged changes.",
+  "keywords": ["git", "commits", "conventional-commits", "changelog", "claude-code", "slash-commands"],
+  "agents": ["claude-code"],
+  "category": "engineering",
+  "license": "MIT",
+  "entry": "README.md"
+}

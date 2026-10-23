@@ -1,0 +1,11 @@
+{
+  "name": "skill-authoring",
+  "version": "1.0.0",
+  "type": "skill",
+  "description": "Teaches an agent to package what it just built as a reusable SkiHost skill and publish it with the skihost CLI.",
+  "keywords": ["skihost", "publish", "skills", "authoring", "meta"],
+  "agents": ["claude-code", "any"],
+  "category": "meta",
+  "license": "MIT",
+  "entry": "SKILL.md"
+}

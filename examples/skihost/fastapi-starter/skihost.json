@@ -1,0 +1,14 @@
+{
+  "name": "fastapi-starter",
+  "version": "2.0.0",
+  "type": "requirements",
+  "description": "Known-good pinned requirements for a FastAPI + SQLAlchemy 2 + Pydantic 2 web API, with dev tools for tests and linting.",
+  "keywords": ["python", "fastapi", "sqlalchemy", "pydantic", "requirements", "backend", "api"],
+  "agents": ["any"],
+  "category": "python",
+  "license": "MIT",
+  "entry": "README.md",
+  "requirements": {
+    "python": ">=3.11"
+  }
+}
