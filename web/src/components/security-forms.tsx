@@ -111,18 +111,35 @@ export function ChangeEmailForm({ email }: { email: string }) {
 
 export function DeleteAccountForm({ username }: { username: string }) {
   const [state, action, pending] = useActionState<FormState, FormData>(deleteAccount, undefined);
+  const [typed, setTyped] = useState("");
+  const matches = typed.trim() === username;
   return (
     <form action={action} className="space-y-3">
       <p className="text-sm text-muted">
         This permanently deletes your account, every rack you own with all its versions, your stars and your API tokens. Agents that
         install your racks will stop finding them. It can&apos;t be undone.
       </p>
-      <label className="block text-sm">
-        Type <code className="text-fg">{username}</code> to confirm
-        <input name="confirm" required autoComplete="off" className="input mt-1.5 max-w-sm" />
-      </label>
+      <div className="space-y-2 text-sm">
+        <label htmlFor="delete-confirm" className="block">
+          To confirm, type your username exactly as shown:
+        </label>
+        <span className="inline-block rounded-md border border-danger/50 bg-danger/10 px-3 py-1.5 font-mono text-base font-semibold text-fg select-all">
+          {username}
+        </span>
+        <input
+          id="delete-confirm"
+          name="confirm"
+          required
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={username}
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          className="input block w-full max-w-sm font-mono"
+        />
+      </div>
       <Message state={state} />
-      <button disabled={pending} className="btn border-danger/50 text-danger hover:border-danger">
+      <button disabled={pending || !matches} className="btn border-danger/50 text-danger hover:border-danger disabled:cursor-not-allowed disabled:opacity-50">
         <Trash2 className="h-4 w-4" /> {pending ? "Deleting…" : "Delete my account"}
       </button>
     </form>
