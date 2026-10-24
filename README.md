@@ -38,6 +38,17 @@ skihost push --create-rack        # create from the manifest and push in one ste
 
 On the website: **New rack** → fill in name and description (optionally push a starter version) → **Push version** on the rack page. Agents use `POST /api/v1/racks` or the `create_rack` MCP tool.
 
+## Sign-in setup (Google + email)
+
+The app supports email + password (with confirmation and password reset) and Google. Configure once in the dashboards:
+
+1. **Google Cloud Console** → APIs & Services → Credentials → *Create OAuth client ID* (Web application). Authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`. (Configure the OAuth consent screen first if asked.)
+2. **Supabase** → Authentication → Sign In / Providers → **Google**: enable it and paste the client ID and secret. The "Continue with Google" button appears on the site within ~5 minutes.
+3. **Supabase** → Authentication → URL Configuration: *Site URL* = your production URL; *Redirect URLs* = `https://<your-domain>/**` and `http://localhost:3000/**`.
+4. **Email**: Supabase's built-in mailer only sends a few emails per hour, so set up custom SMTP (Authentication → Emails → SMTP) before launch.
+
+New Google accounts pick their username once on `/welcome`. Google users can set a password at `/reset-password` or use an API token for the CLI.
+
 ## How agents use it
 
 | Door | Where |

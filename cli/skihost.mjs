@@ -511,6 +511,11 @@ const commands = {
       const res = await api({ ...cfg, token: null }, "POST", "/api/v1/auth/login", {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, token_name: `skihost-cli@${os.hostname()}` }),
+      }).catch((err) => {
+        if (err.code !== "invalid_credentials") throw err;
+        throw new CliError(
+          `${err.message}. Signed up with Google? Create a token at ${cfg.registry}/settings/tokens and run \`skihost login --token <token>\`, or set a password at ${cfg.registry}/reset-password.`,
+        );
       });
       token = res.token;
     }

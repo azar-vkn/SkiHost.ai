@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Boxes, ChevronDown, KeyRound, LogOut, Plus, User } from "lucide-react";
+import { Boxes, ChevronDown, KeyRound, Lock, LogOut, Plus, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "@/app/actions/auth";
 
@@ -38,6 +38,9 @@ export function UserMenu({ username }: { username: string }) {
           </Link>
           <Link href="/settings/tokens" className={item}>
             <KeyRound className="h-4 w-4" /> API tokens
+          </Link>
+          <Link href="/reset-password" className={item}>
+            <Lock className="h-4 w-4" /> Password
           </Link>
           <div className="my-1 border-t border-line-muted" />
           <form action={signOut}>
