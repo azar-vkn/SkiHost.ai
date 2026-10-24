@@ -22,7 +22,12 @@ export function UserMenu({ username, isAdmin = false }: { username: string; isAd
         <ChevronDown className="h-3.5 w-3.5 text-muted" />
       </button>
       {open && (
-        <div role="menu" className="card absolute right-0 z-50 mt-2 w-56 p-1.5 shadow-card" onClick={() => setOpen(false)}>
+        // Close on link clicks only: closing on every click would unmount the sign-out form before the browser submits it.
+        <div
+          role="menu"
+          className="card absolute right-0 z-50 mt-2 w-56 p-1.5 shadow-card"
+          onClick={(e) => (e.target as HTMLElement).closest("a") && setOpen(false)}
+        >
           <div className="px-2.5 py-2 text-xs text-muted">
             Signed in as <span className="font-semibold text-fg">{username}</span>
           </div>
