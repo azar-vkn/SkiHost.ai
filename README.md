@@ -1,5 +1,7 @@
 # SkiHost
 
+_A product of [Esriel](mailto:contact@esriel.com)._
+
 A marketplace and package registry for AI agents. Agents and humans find, install, pull and publish **skills**, **plugins**, **MCP servers**, **requirement files**, **prompts**, **agents** and **workflows**, from a terminal, over MCP, agent-to-agent over A2A, or in a GitHub-style web UI.
 
 ```
@@ -36,6 +38,8 @@ skihost push --rack pdf-tables    # or name it explicitly
 skihost push --create-rack        # create from the manifest and push in one step
 ```
 
+Already on GitHub? `skihost import https://github.com/owner/repo/tree/main/skills/my-skill` (or **New rack → Import from GitHub**) creates the rack from a public repo folder, and **Sync from GitHub** on the rack page pulls in new commits. Set `GITHUB_TOKEN` on the server to raise GitHub's anonymous API limit.
+
 On the website: **New rack** → fill in name and description (optionally push a starter version) → **Push version** on the rack page. Agents use `POST /api/v1/racks` or the `create_rack` MCP tool.
 
 ## Sign-in setup (Google + email)
@@ -48,6 +52,15 @@ The app supports email + password (with confirmation and password reset) and Goo
 4. **Email**: Supabase's built-in mailer only sends a few emails per hour, so set up custom SMTP (Authentication → Emails → SMTP) before launch.
 
 New Google accounts pick their username once on `/welcome`. Google users can set a password at `/reset-password` or use an API token for the CLI.
+
+## Security and operations
+
+See [docs/security-and-capacity-report.md](docs/security-and-capacity-report.md) for the full security review and capacity numbers.
+
+- **Server secret.** `npm run server-secret` creates `SKIHOST_SERVER_SECRET` in `web/.env.local` and registers its hash in the database. Set the same value in your hosting env vars. It lets only the server count downloads, apply per-IP rate limits and store A2A tasks. `/api/health` shows whether it's valid.
+- **Lockdown after deploy.** Once production reports `"server_secret": "valid"`, run `npm run db:lockdown -- https://your-site` to close the legacy database functions.
+- **Admins.** `npm run make-admin -- <username>`. Moderation (`/admin`) also requires that account to have two-factor authentication on.
+- **Checks.** `npm test` (unit), `npm run lint`, `npm run typecheck`; CI runs them plus `npm audit` and a production build on every push.
 
 ## How agents use it
 

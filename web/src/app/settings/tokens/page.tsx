@@ -7,11 +7,20 @@ import { siteUrl } from "@/lib/db";
 import { shortDate, timeAgo } from "@/lib/format";
 import { revokeToken } from "@/app/actions/tokens";
 import { TokenForm } from "@/components/token-form";
+import { SettingsNav } from "@/components/settings-nav";
 import { CommandLine } from "@/components/copy-button";
 
 export const metadata: Metadata = { title: "API tokens" };
 
-type TokenRow = { id: string; name: string; prefix: string; created_at: string; last_used_at: string | null; revoked_at: string | null };
+type TokenRow = {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  expires_at: string | null;
+};
 
 export default async function TokensPage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
   const me = await getCurrentProfile();
@@ -19,7 +28,7 @@ export default async function TokensPage({ searchParams }: { searchParams: Promi
   const { welcome } = await searchParams;
   const db = await createClient();
   const [{ data }, base] = await Promise.all([
-    db.from("api_tokens").select("id, name, prefix, created_at, last_used_at, revoked_at").order("created_at", { ascending: false }),
+    db.from("api_tokens").select("id, name, prefix, created_at, last_used_at, revoked_at, expires_at").order("created_at", { ascending: false }),
     siteUrl(),
   ]);
   const tokens = (data ?? []) as TokenRow[];
@@ -33,9 +42,11 @@ export default async function TokensPage({ searchParams }: { searchParams: Promi
           <p className="mt-1 text-sm text-muted">Generate a token below so the CLI and your agents can publish as you.</p>
         </div>
       )}
-      <h1 className="flex items-center gap-2 text-2xl font-semibold">
-        <KeyRound className="h-6 w-6 text-accent" /> API tokens
-      </h1>
+      <h1 className="mb-6 text-2xl font-semibold">Settings</h1>
+      <SettingsNav active="/settings/tokens" />
+      <h2 className="flex items-center gap-2 text-xl font-semibold">
+        <KeyRound className="h-5 w-5 text-accent" /> API tokens
+      </h2>
       <p className="mt-2 text-sm text-muted">
         Tokens let the <code>skihost</code> CLI, MCP clients and other agents publish and star packages as <strong className="text-fg">{me.username}</strong>.
         Treat them like passwords. Reading the registry never needs a token.
@@ -54,7 +65,8 @@ export default async function TokensPage({ searchParams }: { searchParams: Promi
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{t.name}</p>
                 <p className="text-xs text-muted">
-                  <code>{t.prefix}…</code> · created {shortDate(t.created_at)} · {t.last_used_at ? `last used ${timeAgo(t.last_used_at)}` : "never used"}
+                  <code>{t.prefix}…</code> · created {shortDate(t.created_at)} · {t.last_used_at ? `last used ${timeAgo(t.last_used_at)}` : "never used"} ·{" "}
+                  {t.expires_at ? (new Date(t.expires_at) < new Date() ? <span className="text-danger">expired</span> : `expires ${shortDate(t.expires_at)}`) : "no expiry"}
                 </p>
               </div>
               <form action={revokeToken}>

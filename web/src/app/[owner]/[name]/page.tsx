@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { cache, Suspense } from "react";
-import { BookOpen, Download, File, FileCode2, Folder, History, ExternalLink, ShieldCheck, Scale, Bot, Tag, Upload } from "lucide-react";
+import { BookOpen, Download, File, FileCode2, Folder, FolderGit2, History, ExternalLink, ShieldAlert, ShieldCheck, Scale, Bot, Tag, Upload } from "lucide-react";
 import { createAnonClient } from "@/utils/supabase/server";
 import { getPackage, isStarred, listFiles, pickVersion, getFile, type FileEntry, type PackageDetail } from "@/lib/registry";
 import { installInfo } from "@/lib/install";
@@ -17,6 +17,10 @@ import { VersionSelect } from "@/components/version-select";
 import { TypeBadge, TypeIcon } from "@/components/type-badge";
 import { CommandLine, CopyButton } from "@/components/copy-button";
 import { RackAboutEditor } from "@/components/rack-settings";
+import { GitHubSyncButton } from "@/components/github-sync";
+import { ReportButton, YankButton } from "@/components/moderation";
+import { RiskWarnings } from "@/components/risk-warnings";
+import { setRackStatus } from "@/app/actions/admin";
 
 type Params = Promise<{ owner: string; name: string }>;
 type SP = Promise<{ tab?: string; v?: string; path?: string }>;
@@ -58,6 +62,8 @@ export default async function PackagePage({ params, searchParams }: { params: Pa
   const vq = version.version === pkg.latest_version ? "" : `&v=${version.version}`;
   const tabHref = (t: string) => `/${owner}/${name}?tab=${t}${vq}`;
   const isOwner = me?.username === owner;
+  const isAdmin = me?.role === "admin";
+  const disabled = pkg.status === "quarantined";
 
   return (
     <div>
@@ -69,10 +75,13 @@ export default async function PackagePage({ params, searchParams }: { params: Pa
                 <Upload className="h-4 w-4" /> Push version
               </Link>
             )}
+            {!isOwner && <ReportButton owner={owner} name={name} signedIn={!!me} />}
             <StarButton owner={owner} name={name} initialStarred={starred} initialCount={pkg.stars} signedIn={!!me} />
-            <a href={info.download_url} className="btn btn-primary">
-              <Download className="h-4 w-4" /> Download
-            </a>
+            {!disabled && (
+              <a href={info.download_url} className="btn btn-primary">
+                <Download className="h-4 w-4" /> Download
+              </a>
+            )}
           </RackHeader>
           <nav className="mt-5 -mb-px flex gap-1 overflow-x-auto text-sm" aria-label="Rack sections">
             <Tab href={`/${owner}/${name}${vq ? `?${vq.slice(1)}` : ""}`} active={tab === "readme"} icon={BookOpen} label="README" />
@@ -83,8 +92,26 @@ export default async function PackagePage({ params, searchParams }: { params: Pa
       </div>
 
       <div className="mx-auto grid grid-cols-1 max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_340px]">
-        <div className="min-w-0">
-          {version.version !== pkg.latest_version && (
+        <div className="min-w-0 space-y-4">
+          {disabled && (
+            <div className="flex items-start gap-3 rounded-lg border border-danger/50 bg-danger/10 p-4 text-sm">
+              <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-danger" />
+              <div>
+                <p className="font-semibold text-danger">This rack has been disabled by SkiHost moderators</p>
+                <p className="mt-1 text-muted">
+                  {pkg.status_reason ?? "It was reported and is under review."} It can&apos;t be downloaded or installed, and it&apos;s hidden from search.
+                </p>
+              </div>
+            </div>
+          )}
+          {version.yanked_at && (
+            <div className="rounded-md border border-warning/50 bg-warning/10 px-4 py-2.5 text-sm">
+              <span className="font-semibold text-warning">v{version.version} was yanked</span>
+              {version.yank_reason ? `: ${version.yank_reason}` : " by its publisher."} Use a newer version.
+            </div>
+          )}
+          <RiskWarnings flags={version.risk_flags} />
+          {version.version !== pkg.latest_version && !version.yanked_at && (
             <div className="mb-4 rounded-md border border-warning/40 bg-subtle px-4 py-2.5 text-sm">
               You&apos;re viewing <span className="font-mono">v{version.version}</span>. The latest is{" "}
               <Link href={`/${owner}/${name}`} className="font-mono text-accent hover:underline">
@@ -97,13 +124,34 @@ export default async function PackagePage({ params, searchParams }: { params: Pa
           {tab === "files" && (
             <FilesTab owner={owner} name={name} files={files} path={sp.path ?? ""} file={openFile} vq={vq} pkgVersions={pkg.versions.map((v) => v.version)} current={version.version} latest={pkg.latest_version!} />
           )}
-          {tab === "versions" && <VersionsTab owner={owner} name={name} pkg={pkg} />}
+          {tab === "versions" && <VersionsTab owner={owner} name={name} pkg={pkg} canYank={isOwner || isAdmin} />}
         </div>
 
         <aside className="space-y-6">
+          {isAdmin && (
+            <section className="card space-y-3 border-danger/40 p-4 text-sm">
+              <h2 className="flex items-center gap-1.5 font-semibold">
+                <ShieldAlert className="h-4 w-4 text-danger" /> Moderation
+              </h2>
+              <form action={setRackStatus} className="space-y-2">
+                <input type="hidden" name="owner" value={owner} />
+                <input type="hidden" name="name" value={name} />
+                <input type="hidden" name="status" value={disabled ? "active" : "quarantined"} />
+                {!disabled && <input name="reason" className="input h-8 text-xs" placeholder="Reason shown on the page" maxLength={500} />}
+                <button className={`btn h-8 w-full text-xs ${disabled ? "" : "border-danger/50 text-danger"}`}>{disabled ? "Restore rack" : "Disable rack"}</button>
+              </form>
+              <Link href="/admin" className="block text-xs text-accent hover:underline">
+                Open the admin console
+              </Link>
+            </section>
+          )}
           <section>
             <h2 className="mb-2 text-sm font-semibold">Install</h2>
-            <InstallPanel info={info} base={base} />
+            {disabled ? (
+              <p className="card p-4 text-sm text-muted">Installing is disabled while this rack is under moderation.</p>
+            ) : (
+              <InstallPanel info={info} base={base} />
+            )}
           </section>
 
           <section className="space-y-3 text-sm">
@@ -142,6 +190,22 @@ export default async function PackagePage({ params, searchParams }: { params: Pa
                 </li>
               )}
             </ul>
+            {m.source?.type === "github" && m.source.url.startsWith("https://github.com/") && (
+              <div className="card space-y-2 p-3">
+                <a href={m.source.url} target="_blank" rel="noopener noreferrer nofollow" className="flex items-start gap-2 text-accent hover:underline">
+                  <FolderGit2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="min-w-0 break-words">
+                    Imported from {m.source.repo}
+                    {m.source.path && `/${m.source.path}`}
+                  </span>
+                </a>
+                <p className="font-mono text-xs text-muted">
+                  {m.source.ref}
+                  {m.source.commit && ` @ ${m.source.commit.slice(0, 7)}`} · v{version.version}
+                </p>
+                {isOwner && <GitHubSyncButton rack={name} source={m.source} />}
+              </div>
+            )}
           </section>
 
           <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line text-sm">
@@ -430,7 +494,17 @@ function FilesTab({
   );
 }
 
-function VersionsTab({ owner, name, pkg }: { owner: string; name: string; pkg: NonNullable<Awaited<ReturnType<typeof getPackage>>> }) {
+function VersionsTab({
+  owner,
+  name,
+  pkg,
+  canYank,
+}: {
+  owner: string;
+  name: string;
+  pkg: NonNullable<Awaited<ReturnType<typeof getPackage>>>;
+  canYank: boolean;
+}) {
   return (
     <div className="card divide-y divide-line-muted">
       {pkg.versions.map((v) => (
@@ -441,13 +515,21 @@ function VersionsTab({ owner, name, pkg }: { owner: string; name: string; pkg: N
                 v{v.version}
               </Link>
               {v.version === pkg.latest_version && <span className="chip">latest</span>}
+              {v.yanked_at && <span className="rounded-full border border-warning/50 px-2 text-[0.7rem] text-warning">yanked</span>}
+              {v.risk_flags.length > 0 && (
+                <span className="rounded-full border border-warning/50 px-2 text-[0.7rem] text-warning" title={v.risk_flags.join(", ")}>
+                  {v.risk_flags.length} warning{v.risk_flags.length > 1 ? "s" : ""}
+                </span>
+              )}
             </div>
             <p className="mt-1 text-xs text-muted">
               Published {shortDate(v.created_at)} · {v.file_count} files · {formatBytes(v.size)} · {compactNumber(v.downloads)} downloads
             </p>
             {v.changelog && <p className="mt-2 text-sm">{v.changelog}</p>}
+            {v.yank_reason && <p className="mt-1 text-xs text-warning">Yanked: {v.yank_reason}</p>}
           </div>
           <div className="flex gap-2">
+            {canYank && <YankButton owner={owner} name={name} version={v.version} yanked={!!v.yanked_at} />}
             <Link href={`/${owner}/${name}?tab=files&v=${v.version}`} className="btn h-7 px-2.5 text-xs">
               Browse files
             </Link>

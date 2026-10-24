@@ -1,12 +1,13 @@
-import { createAnonClient } from "@/utils/supabase/server";
+import { rateLimit } from "@/lib/rate-limit";
 import { errorResponse, json, preflight } from "@/lib/http";
-import { getStats } from "@/lib/registry";
+import { cachedStats } from "@/lib/cached";
 
 export const OPTIONS = preflight;
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    return json(await getStats(createAnonClient()));
+    await rateLimit(req.headers, "read");
+    return json(await cachedStats(), { headers: { "Cache-Control": "public, max-age=60" } });
   } catch (err) {
     return errorResponse(err);
   }

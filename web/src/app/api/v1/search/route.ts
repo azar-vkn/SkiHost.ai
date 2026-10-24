@@ -1,4 +1,5 @@
 import { createAnonClient } from "@/utils/supabase/server";
+import { rateLimit } from "@/lib/rate-limit";
 import { baseUrl, errorResponse, json, preflight } from "@/lib/http";
 import { searchPackages } from "@/lib/registry";
 
@@ -6,6 +7,7 @@ export const OPTIONS = preflight;
 
 export async function GET(req: Request) {
   try {
+    await rateLimit(req.headers, "search");
     const sp = new URL(req.url).searchParams;
     const base = baseUrl(req);
     const { total, results } = await searchPackages(createAnonClient(), {

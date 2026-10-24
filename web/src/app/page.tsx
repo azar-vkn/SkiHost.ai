@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { ArrowRight, Bot, Network, Plug, TerminalSquare, Upload } from "lucide-react";
-import { createAnonClient } from "@/utils/supabase/server";
-import { getStats, searchPackages, type PackageSummary, type Stats } from "@/lib/registry";
+import { type PackageSummary, type Stats } from "@/lib/registry";
+import { cachedListing, cachedStats } from "@/lib/cached";
 import { compactNumber } from "@/lib/format";
 import { siteUrl } from "@/lib/db";
 import { SearchBox } from "@/components/search-box";
@@ -14,14 +14,9 @@ import { SetupNotice } from "@/components/setup-notice";
 export const dynamic = "force-dynamic";
 
 async function loadHome() {
-  const db = createAnonClient();
   try {
-    const [stats, popular, fresh] = await Promise.all([
-      getStats(db),
-      searchPackages(db, { sort: "downloads", limit: 6 }),
-      searchPackages(db, { sort: "updated", limit: 6 }),
-    ]);
-    return { stats, popular: popular.results, fresh: fresh.results, error: null };
+    const [stats, popular, fresh] = await Promise.all([cachedStats(), cachedListing("downloads", 6), cachedListing("updated", 6)]);
+    return { stats, popular, fresh, error: null };
   } catch (err) {
     return { stats: null, popular: [], fresh: [], error: err instanceof Error ? err.message : "Registry unavailable" };
   }

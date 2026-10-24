@@ -1,4 +1,5 @@
 import { createAnonClient } from "@/utils/supabase/server";
+import { rateLimit } from "@/lib/rate-limit";
 import { baseUrl, errorResponse, json, preflight } from "@/lib/http";
 import { requestDb } from "@/lib/db";
 import { createRack, listRacks, RegistryError, type RackInput } from "@/lib/registry";
@@ -8,6 +9,7 @@ export const OPTIONS = preflight;
 /** `?owner=name` → all of that owner's racks, including empty ones. */
 export async function GET(req: Request) {
   try {
+    await rateLimit(req.headers, "read");
     const owner = new URL(req.url).searchParams.get("owner");
     if (!owner) throw new RegistryError("`owner` is required", 400, "invalid_request");
     const base = baseUrl(req);
@@ -24,6 +26,7 @@ export async function GET(req: Request) {
 /** Create a rack: { name, description, type?, keywords?, homepage?, repository? }. Push versions into it afterwards. */
 export async function POST(req: Request) {
   try {
+    await rateLimit(req.headers, "write");
     const { db, token } = await requestDb(req);
     const body = (await req.json().catch(() => ({}))) as RackInput & { keywords?: string[] | string };
     const keywords = typeof body.keywords === "string" ? body.keywords.split(",") : body.keywords;

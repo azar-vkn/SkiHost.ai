@@ -8,7 +8,7 @@ export function agentCard(base: string) {
     url: `${base}/api/a2a`,
     preferredTransport: "JSONRPC",
     additionalInterfaces: [{ url: `${base}/api/a2a`, transport: "JSONRPC" }],
-    provider: { organization: "SkiHost", url: base },
+    provider: { organization: "Esriel", url: base },
     iconUrl: `${base}/icon.svg`,
     version: "1.0.0",
     documentationUrl: `${base}/docs#a2a`,

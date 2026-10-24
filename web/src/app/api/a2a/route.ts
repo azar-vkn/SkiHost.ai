@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { createAnonClient } from "@/utils/supabase/server";
 import { baseUrl, CORS_HEADERS, preflight } from "@/lib/http";
-import { runMarketplaceAgent } from "@/lib/agent";
+import { llmBudgetAvailable, runMarketplaceAgent } from "@/lib/agent";
+import { rateLimit } from "@/lib/rate-limit";
+import { RegistryError } from "@/lib/registry";
 
 /**
  * A2A JSON-RPC endpoint. A buyer agent sends `message/send` with what it needs;
@@ -27,7 +29,16 @@ export async function POST(req: Request) {
     return err(null, -32700, "Parse error");
   }
   const { id, method, params = {} } = body;
+  try {
+    await rateLimit(req.headers, "a2a");
+  } catch (e) {
+    return Response.json(
+      { jsonrpc: "2.0", id: id ?? null, error: { code: -32000, message: e instanceof RegistryError ? e.message : "Rate limited" } },
+      { status: 429, headers: { ...CORS_HEADERS, "Retry-After": "60" } },
+    );
+  }
   const db = createAnonClient();
+  const secret = process.env.SKIHOST_SERVER_SECRET;
 
   switch (method) {
     case "message/send": {
@@ -38,7 +49,7 @@ export async function POST(req: Request) {
 
       const contextId = message.contextId ?? randomUUID();
       const taskId = randomUUID();
-      const result = await runMarketplaceAgent(db, baseUrl(req), text);
+      const result = await runMarketplaceAgent(db, baseUrl(req), text.slice(0, 2000), { allowLlm: await llmBudgetAvailable(req.headers) });
       const userMessage = { ...message, kind: "message", messageId: message.messageId ?? randomUUID(), contextId, taskId };
       const agentMessage = {
         kind: "message",
@@ -67,11 +78,16 @@ export async function POST(req: Request) {
         history: [userMessage, agentMessage],
       };
       // Persisting is best effort: the caller already gets the full task in this response.
-      await db.rpc("save_a2a_task", { p_id: taskId, p_context: contextId, p_task: task });
+      // Only the server (holder of the secret) may store tasks; the legacy call bridges until it's configured.
+      if (secret) await db.rpc("save_a2a_task_v2", { p_secret: secret, p_id: taskId, p_context: contextId, p_task: task });
+      else await db.rpc("save_a2a_task", { p_id: taskId, p_context: contextId, p_task: task });
       return ok(id, task);
     }
     case "tasks/get": {
-      const { data } = await db.rpc("get_a2a_task", { p_id: String(params.id ?? "") });
+      const taskId = String(params.id ?? "").slice(0, 64);
+      const { data } = secret
+        ? await db.rpc("get_a2a_task_v2", { p_secret: secret, p_id: taskId })
+        : await db.rpc("get_a2a_task", { p_id: taskId });
       return data ? ok(id, data) : err(id, -32001, "Task not found");
     }
     case "tasks/cancel":

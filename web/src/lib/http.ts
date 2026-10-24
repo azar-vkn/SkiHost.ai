@@ -16,8 +16,11 @@ export function json(data: unknown, init: ResponseInit = {}) {
 
 export function errorResponse(err: unknown) {
   if (err instanceof RegistryError || err instanceof PackageError) {
-    const code = err instanceof RegistryError ? err.code : "invalid_package";
-    return json({ error: { code, message: err.message } }, { status: err.status });
+    const code = err.code;
+    return json(
+      { error: { code, message: err.message } },
+      { status: err.status, headers: err.status === 429 ? { "Retry-After": "60" } : undefined },
+    );
   }
   console.error(err);
   return json({ error: { code: "internal", message: "Internal error" } }, { status: 500 });

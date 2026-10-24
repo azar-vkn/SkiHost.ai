@@ -1,4 +1,5 @@
 import { createAnonClient } from "@/utils/supabase/server";
+import { rateLimit } from "@/lib/rate-limit";
 import { baseUrl, errorResponse, json, preflight } from "@/lib/http";
 import { getPackage, listFiles, pickVersion, RegistryError } from "@/lib/registry";
 import { installInfo } from "@/lib/install";
@@ -10,6 +11,7 @@ export const OPTIONS = preflight;
 /** Version manifest plus its file list (use `latest` for the newest version). */
 export async function GET(req: Request, { params }: Ctx) {
   try {
+    await rateLimit(req.headers, "read");
     const { owner, name, version } = await params;
     const db = createAnonClient();
     const pkg = await getPackage(db, owner, name);

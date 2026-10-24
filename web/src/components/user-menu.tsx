@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { Boxes, ChevronDown, KeyRound, Lock, LogOut, Plus, User } from "lucide-react";
+import { Boxes, ChevronDown, KeyRound, Lock, LogOut, Palette, Plus, ShieldAlert, User } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "@/app/actions/auth";
 
-export function UserMenu({ username }: { username: string }) {
+export function UserMenu({ username, isAdmin = false }: { username: string; isAdmin?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -39,9 +39,17 @@ export function UserMenu({ username }: { username: string }) {
           <Link href="/settings/tokens" className={item}>
             <KeyRound className="h-4 w-4" /> API tokens
           </Link>
-          <Link href="/reset-password" className={item}>
-            <Lock className="h-4 w-4" /> Password
+          <Link href="/settings/security" className={item}>
+            <Lock className="h-4 w-4" /> Security
           </Link>
+          <Link href="/settings/appearance" className={item}>
+            <Palette className="h-4 w-4" /> Appearance
+          </Link>
+          {isAdmin && (
+            <Link href="/admin" className={item}>
+              <ShieldAlert className="h-4 w-4" /> Moderation
+            </Link>
+          )}
           <div className="my-1 border-t border-line-muted" />
           <form action={signOut}>
             <button className={`${item} w-full text-left`}>

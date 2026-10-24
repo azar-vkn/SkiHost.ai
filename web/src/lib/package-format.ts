@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
+import { scanFiles, type RiskFlag } from "./security-scan";
 
 export const PACKAGE_TYPES = ["skill", "plugin", "mcp-server", "requirements", "agent", "prompt", "workflow"] as const;
 export type PackageType = (typeof PACKAGE_TYPES)[number];
@@ -32,6 +33,21 @@ export interface Manifest {
   /** MCP servers: how a client launches it. */
   mcp?: { command: string; args?: string[]; env?: Record<string, string> };
   changelog?: string;
+  /** Where this version was imported from (set by SkiHost's GitHub import). */
+  source?: PackageSource;
+}
+
+export interface PackageSource {
+  type: "github";
+  /** owner/repo */
+  repo: string;
+  /** Branch, tag or commit as requested ("HEAD" = default branch). */
+  ref: string;
+  /** Folder inside the repo ("" for the root). */
+  path: string;
+  /** Commit SHA the files were taken from, when GitHub reported it. */
+  commit?: string;
+  url: string;
 }
 
 export interface PackageFile {
@@ -46,10 +62,13 @@ export interface BuiltPackage {
   readme: string | null;
   files: PackageFile[];
   archive: Uint8Array;
+  /** Heuristic warnings shown to installers (see security-scan.ts). */
+  riskFlags: RiskFlag[];
   sha256: string;
 }
 
 export class PackageError extends Error {
+  code = "invalid_package";
   constructor(message: string, public status = 400) {
     super(message);
   }
@@ -115,6 +134,16 @@ export function buildPackage(input: Record<string, Uint8Array>, overrides: Parti
   if (paths.length === 0) throw new PackageError("Package has no files");
   if (paths.length > MAX_FILES) throw new PackageError(`Package has more than ${MAX_FILES} files`);
 
+  const scan = scanFiles(files);
+  if (scan.secrets.length) {
+    const list = scan.secrets.slice(0, 8).map((s) => `  ${s.path}:${s.line} — ${s.kind}`).join("\n");
+    throw new PackageError(
+      `Publishing blocked: these files contain what look like real credentials, which anyone could copy once published:\n${list}\n` +
+        "Remove them (use environment variables and list their names in requirements.env), revoke the exposed keys, then push again.",
+      422,
+    );
+  }
+
   let manifest: Partial<Manifest> = {};
   if (files["skihost.json"]) {
     try {
@@ -135,7 +164,8 @@ export function buildPackage(input: Record<string, Uint8Array>, overrides: Parti
       ...manifest,
     };
   }
-  manifest = { ...manifest, ...stripUndefined(overrides) };
+  // `source` is provenance SkiHost records itself on import; never trust one from uploaded files.
+  manifest = { ...manifest, source: undefined, ...stripUndefined(overrides) };
 
   const finalManifest = validateManifest(manifest, files);
   files["skihost.json"] = strToU8(JSON.stringify(finalManifest, null, 2) + "\n");
@@ -168,6 +198,7 @@ export function buildPackage(input: Record<string, Uint8Array>, overrides: Parti
     files: listed,
     archive,
     sha256: createHash("sha256").update(archive).digest("hex"),
+    riskFlags: scan.flags,
   };
 }
 
@@ -201,6 +232,7 @@ function validateManifest(m: Partial<Manifest>, files: Record<string, Uint8Array
     requirements: m.requirements,
     mcp: m.mcp,
     changelog: m.changelog?.toString().slice(0, 5000) || undefined,
+    source: m.source?.type === "github" ? m.source : undefined,
   }) as Manifest;
 }
 
@@ -247,8 +279,11 @@ export function parseFrontmatter(md: string): { data: Record<string, unknown>; b
   const m = md.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!m) return { data: {}, body: md };
   const data: Record<string, unknown> = {};
+  const lines = m[1].split(/\r?\n/);
+  const indented = (l: string | undefined) => l !== undefined && (l.trim() === "" || /^\s/.test(l));
   let listKey: string | null = null;
-  for (const line of m[1].split(/\r?\n/)) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const item = line.match(/^\s+-\s+(.*)$/);
     if (item && listKey) {
       (data[listKey] as string[]).push(unquote(item[1]));
@@ -257,15 +292,22 @@ export function parseFrontmatter(md: string): { data: Record<string, unknown>; b
     const kv = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
     if (!kv) continue;
     const [, key, value] = kv;
+    listKey = null;
     if (value === "") {
       data[key] = [];
       listKey = key;
+    } else if (/^[>|][+-]?\d*$/.test(value)) {
+      // Block scalars: `>` folds lines into one paragraph, `|` keeps the line breaks.
+      const block: string[] = [];
+      while (indented(lines[i + 1])) block.push(lines[++i].trim());
+      data[key] = value.startsWith(">") ? block.join(" ").replace(/\s{2,}/g, " ").trim() : block.join("\n").trim();
     } else if (value.startsWith("[") && value.endsWith("]")) {
       data[key] = value.slice(1, -1).split(",").map((s) => unquote(s.trim())).filter(Boolean);
-      listKey = null;
     } else {
-      data[key] = unquote(value);
-      listKey = null;
+      // A plain value may continue on more-indented lines.
+      let text = value;
+      while (indented(lines[i + 1]) && !/^\s+-\s/.test(lines[i + 1]) && lines[i + 1].trim() !== "") text += " " + lines[++i].trim();
+      data[key] = unquote(text);
     }
   }
   return { data, body: md.slice(m[0].length) };

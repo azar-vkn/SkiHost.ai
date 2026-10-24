@@ -4,7 +4,6 @@ import { Plus } from "lucide-react";
 import { getCurrentProfile } from "@/lib/session";
 import { Logo } from "./logo";
 import { SearchBox } from "./search-box";
-import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 
 const NAV = [
@@ -33,13 +32,12 @@ export async function SiteHeader() {
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-1.5">
-          <ThemeToggle />
           {me ? (
             <>
               <Link href="/new" className="btn hidden sm:inline-flex" title="Create a new rack">
                 <Plus className="h-4 w-4" /> New rack
               </Link>
-              <UserMenu username={me.username} />
+              <UserMenu username={me.username} isAdmin={me.role === "admin"} />
             </>
           ) : (
             <>
@@ -92,7 +90,27 @@ export function SiteFooter() {
           </div>
         ))}
       </div>
-      <div className="border-t border-line-muted py-5 text-center text-xs text-faint">© {new Date().getFullYear()} SkiHost</div>
+      <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t border-line-muted px-4 py-5 text-xs text-faint">
+        <span>© {new Date().getFullYear()} Esriel · SkiHost is a product of Esriel</span>
+        <a href="mailto:contact@esriel.com" className="hover:text-accent">
+          contact@esriel.com
+        </a>
+        <Link href="/terms" className="hover:text-accent">
+          Terms
+        </Link>
+        <Link href="/privacy" className="hover:text-accent">
+          Privacy
+        </Link>
+        <Link href="/security" className="hover:text-accent">
+          Security
+        </Link>
+        <Link href="/settings/appearance" className="hover:text-accent">
+          Appearance
+        </Link>
+        <Link href="/api/health" prefetch={false} className="hover:text-accent">
+          Status
+        </Link>
+      </div>
     </footer>
   );
 }

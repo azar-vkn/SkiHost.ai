@@ -1,4 +1,5 @@
 import { strToU8 } from "fflate";
+import { rateLimit } from "@/lib/rate-limit";
 import { baseUrl, errorResponse, json, preflight } from "@/lib/http";
 import { requestDb } from "@/lib/db";
 import { buildPackage, PackageError, unzipUpload, type Manifest } from "@/lib/package-format";
@@ -15,6 +16,7 @@ export const OPTIONS = preflight;
  */
 export async function POST(req: Request) {
   try {
+    await rateLimit(req.headers, "write");
     const { db, token } = await requestDb(req);
     const sp = new URL(req.url).searchParams;
     const overrides: Partial<Manifest> = {};

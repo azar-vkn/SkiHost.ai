@@ -1,4 +1,5 @@
 import { createAnonClient } from "@/utils/supabase/server";
+import { rateLimit } from "@/lib/rate-limit";
 import { baseUrl, errorResponse, json, preflight } from "@/lib/http";
 import { requestDb } from "@/lib/db";
 import { deletePackage, getPackage, RegistryError, updateRack } from "@/lib/registry";
@@ -11,6 +12,7 @@ export const OPTIONS = preflight;
 /** A rack: its About details, versions and install commands (`install` is null while the rack is empty). */
 export async function GET(req: Request, { params }: Ctx) {
   try {
+    await rateLimit(req.headers, "read");
     const { owner, name } = await params;
     const pkg = await getPackage(createAnonClient(), owner, name);
     if (!pkg) throw new RegistryError(`Rack ${owner}/${name} not found`, 404, "not_found");
@@ -22,8 +24,10 @@ export async function GET(req: Request, { params }: Ctx) {
       url: `${baseUrl(req)}/${owner}/${name}`,
       empty: !pkg.latest_version,
       manifest: latest?.manifest ?? null,
+      risk_flags: latest?.risk_flags ?? [],
       versions: versions.map(({ id: _vid, manifest: _m, readme: _r, ...v }) => v),
-      install: pkg.latest_version ? installInfo(baseUrl(req), owner, name, pkg.latest_version, latest?.manifest) : null,
+      install:
+        pkg.latest_version && pkg.status === "active" ? installInfo(baseUrl(req), owner, name, pkg.latest_version, latest?.manifest) : null,
     });
   } catch (err) {
     return errorResponse(err);
@@ -33,6 +37,7 @@ export async function GET(req: Request, { params }: Ctx) {
 /** Edit the rack's About details: { description?, keywords?, homepage?, repository? }. */
 export async function PATCH(req: Request, { params }: Ctx) {
   try {
+    await rateLimit(req.headers, "write");
     const { owner, name } = await params;
     const { db, token } = await requestDb(req);
     const body = (await req.json().catch(() => ({}))) as {
@@ -51,6 +56,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
 export async function DELETE(req: Request, { params }: Ctx) {
   try {
+    await rateLimit(req.headers, "write");
     const { owner, name } = await params;
     const { db, token } = await requestDb(req);
     await deletePackage(db, token, owner, name);

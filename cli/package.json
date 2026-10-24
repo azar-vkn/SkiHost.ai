@@ -12,5 +12,6 @@
   "engines": {
     "node": ">=18"
   },
+  "author": "Esriel <contact@esriel.com>",
   "license": "MIT"
 }

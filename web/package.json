@@ -10,7 +10,12 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "db:migrate": "node scripts/db-migrate.mjs",
-    "db:seed": "node scripts/seed.mjs"
+    "db:seed": "node scripts/seed.mjs",
+    "server-secret": "node scripts/server-secret.mjs",
+    "make-admin": "node scripts/make-admin.mjs",
+    "test": "vitest run",
+    "smoke": "node scripts/smoke.mjs",
+    "db:lockdown": "node scripts/lockdown.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
@@ -36,6 +41,10 @@
     "eslint-config-next": "15.5.28",
     "postgres": "^3.4.9",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7"
+  },
+  "overrides": {
+    "postcss": "^8.5.31"
   }
 }

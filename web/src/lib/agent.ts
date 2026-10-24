@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getPackage, searchPackages, type PackageSummary } from "./registry";
 import { installInfo } from "./install";
 import { PACKAGE_TYPES } from "./package-format";
+import { allow, allowGlobal } from "./rate-limit";
 
 /**
  * The SkiHost marketplace agent: the "seller" side that buyer agents (and humans in the
@@ -41,10 +42,25 @@ const TYPE_HINTS: [RegExp, string][] = [
   [/\bworkflows?\b/i, "workflow"],
 ];
 
-export async function runMarketplaceAgent(db: SupabaseClient, base: string, message: string): Promise<AgentResult> {
+/**
+ * Whether this request may use Claude: needs ANTHROPIC_API_KEY, the caller's hourly allowance and the
+ * fleet-wide daily budget (AGENT_LLM_DAILY_LIMIT, default 500). Otherwise the keyword pipeline answers.
+ */
+export async function llmBudgetAvailable(h: Headers) {
+  if (!process.env.ANTHROPIC_API_KEY) return false;
+  if (!(await allow(h, "agentLlm"))) return false;
+  return allowGlobal("agent-llm", Number(process.env.AGENT_LLM_DAILY_LIMIT ?? 500), 86400);
+}
+
+export async function runMarketplaceAgent(
+  db: SupabaseClient,
+  base: string,
+  message: string,
+  opts: { allowLlm?: boolean } = {},
+): Promise<AgentResult> {
   const text = message.trim().slice(0, 2000);
   if (!text) return helpResult(base);
-  if (process.env.ANTHROPIC_API_KEY) {
+  if (process.env.ANTHROPIC_API_KEY && opts.allowLlm) {
     try {
       return await runWithClaude(db, base, text);
     } catch (err) {

@@ -68,6 +68,42 @@ export function GET(req: Request) {
           responses: { "201": { description: "Created" }, "409": { description: "Rack already exists" } },
         },
       },
+      "/api/v1/import": {
+        post: {
+          operationId: "importFromGitHub",
+          summary: "Import a public GitHub repo folder as a rack version (creates the rack if needed; no-op when the commit is unchanged)",
+          security: [{ token: [] }],
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    url: { type: "string", description: "github.com repo or folder URL, or owner/repo" },
+                    path: { type: "string" },
+                    ref: { type: "string" },
+                    name: { type: "string" },
+                    description: { type: "string" },
+                    version: { type: "string" },
+                    type: { type: "string", enum: PACKAGE_TYPES },
+                  },
+                  required: ["url"],
+                },
+              },
+            },
+          },
+          responses: { "201": { description: "Imported" }, "200": { description: "Already up to date" } },
+        },
+      },
+      "/api/v1/import/preview": {
+        post: {
+          operationId: "previewGitHubImport",
+          summary: "List the importable folders (SKILL.md / skihost.json) of a GitHub repo",
+          security: [{ token: [] }],
+          requestBody: { content: { "application/json": { schema: { type: "object", properties: { url: { type: "string" }, ref: { type: "string" }, path: { type: "string" } }, required: ["url"] } } } },
+          responses: { "200": { description: "{ repo, ref, commit, info, candidates[] }" } },
+        },
+      },
       "/api/v1/packages/{owner}/{name}": {
         get: { operationId: "getPackage", summary: "Rack details, versions and install commands (also at /api/v1/racks/{owner}/{name})", parameters: ownerName, responses: { "200": { description: "Rack" }, "404": { description: "Not found" } } },
         patch: {

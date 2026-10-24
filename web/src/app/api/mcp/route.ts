@@ -1,8 +1,10 @@
 import { strToU8 } from "fflate";
 import { createAnonClient } from "@/utils/supabase/server";
 import { baseUrl, bearerToken, CORS_HEADERS, preflight } from "@/lib/http";
-import { runMarketplaceAgent } from "@/lib/agent";
+import { llmBudgetAvailable, runMarketplaceAgent } from "@/lib/agent";
+import { rateLimit } from "@/lib/rate-limit";
 import { buildPackage, PACKAGE_TYPES } from "@/lib/package-format";
+import { importFromGitHub, previewImport } from "@/lib/import-service";
 import { createRack, getFile, getPackage, listFiles, pickVersion, publishPackage, RegistryError, searchPackages, whoami } from "@/lib/registry";
 import { installInfo } from "@/lib/install";
 
@@ -127,6 +129,29 @@ const TOOLS = [
     },
   },
   {
+    name: "import_from_github",
+    title: "Import from GitHub",
+    description:
+      "Import a public GitHub repository folder as one of your racks (creating the rack if needed), or sync new commits into it. Call with list_only: true first to see every skill folder in a repo. Needs an Authorization: Bearer <SkiHost API token> header.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "github.com URL of a repo or folder (…/tree/<branch>/<path>), or owner/repo" },
+        path: { type: "string", description: "Folder inside the repo to import" },
+        ref: { type: "string", description: "Branch, tag or commit (default: the repo's default branch)" },
+        name: { type: "string", description: "Rack name (default: from SKILL.md/skihost.json or the folder name)" },
+        description: { type: "string", description: "Needed when creating a rack and the folder has none" },
+        version: { type: "string", description: "semver; default: declared version, else 0.1.0 or the next patch" },
+        list_only: { type: "boolean", description: "Only list the importable folders" },
+        confirm_rights: {
+          type: "boolean",
+          description: "Required (true) to import: confirms the code is yours or its license allows redistributing it",
+        },
+      },
+      required: ["url"],
+    },
+  },
+  {
     name: "whoami",
     title: "Who am I",
     description: "Show the SkiHost account the connection's API token belongs to.",
@@ -151,8 +176,15 @@ export async function POST(req: Request) {
   } catch {
     return rpcJson({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } });
   }
-  const ctx = { base: baseUrl(req), token: bearerToken(req) };
   const batch = Array.isArray(body) ? body : [body];
+  try {
+    if (batch.length > 20) throw new RegistryError("Batches are limited to 20 requests", 400, "invalid_request");
+    await rateLimit(req.headers, "mcp");
+  } catch (err) {
+    const e = err instanceof RegistryError ? err : new RegistryError("Request rejected", 400);
+    return Response.json({ jsonrpc: "2.0", id: null, error: { code: -32000, message: e.message } }, { status: e.status, headers: CORS_HEADERS });
+  }
+  const ctx = { base: baseUrl(req), token: bearerToken(req), headers: req.headers };
   const responses = (await Promise.all(batch.map((r) => handle(r, ctx)))).filter(Boolean);
   if (responses.length === 0) return new Response(null, { status: 202, headers: CORS_HEADERS });
   return rpcJson(Array.isArray(body) ? responses : responses[0]);
@@ -162,7 +194,9 @@ function rpcJson(data: unknown) {
   return Response.json(data, { headers: CORS_HEADERS });
 }
 
-async function handle(r: RpcRequest, ctx: { base: string; token: string | null }) {
+type Ctx = { base: string; token: string | null; headers: Headers };
+
+async function handle(r: RpcRequest, ctx: Ctx) {
   const isNotification = r.id === undefined || r.id === null;
   const reply = (result: unknown) => (isNotification ? null : { jsonrpc: "2.0", id: r.id, result });
   const fail = (code: number, message: string) =>
@@ -212,7 +246,7 @@ function splitId(id: unknown) {
   return { owner, name: name.split("@")[0], version: name.split("@")[1] ?? null };
 }
 
-async function callTool(name: string, args: Record<string, unknown>, ctx: { base: string; token: string | null }) {
+async function callTool(name: string, args: Record<string, unknown>, ctx: Ctx) {
   const db = createAnonClient();
   switch (name) {
     case "search_packages": {
@@ -237,7 +271,7 @@ async function callTool(name: string, args: Record<string, unknown>, ctx: { base
       };
     }
     case "ask_marketplace": {
-      const r = await runMarketplaceAgent(db, ctx.base, String(args.message ?? ""));
+      const r = await runMarketplaceAgent(db, ctx.base, String(args.message ?? ""), { allowLlm: await llmBudgetAvailable(ctx.headers) });
       return { reply: r.reply, packages: r.packages.map((p) => ({ id: p.id, install: p.install, description: p.description })) };
     }
     case "get_package":
@@ -306,6 +340,22 @@ async function callTool(name: string, args: Record<string, unknown>, ctx: { base
         result = await publishPackage(db, ctx.token, pkg);
       }
       return { ...result, url: `${ctx.base}/${result.owner}/${result.name}` };
+    }
+    case "import_from_github": {
+      if (!ctx.token) throw new Error("import_from_github needs an Authorization: Bearer <SkiHost API token> header");
+      const req = {
+        url: String(args.url ?? ""),
+        path: args.path as string | undefined,
+        ref: args.ref as string | undefined,
+        name: args.name as string | undefined,
+        description: args.description as string | undefined,
+        version: args.version as string | undefined,
+        confirm_rights: args.confirm_rights === true,
+      };
+      await rateLimit(ctx.headers, "import");
+      if (args.list_only) return await previewImport(db, ctx.token, req);
+      const result = await importFromGitHub(db, ctx.token, req);
+      return { ...result, id: `${result.owner}/${result.name}`, url: `${ctx.base}/${result.owner}/${result.name}` };
     }
     case "create_rack": {
       if (!ctx.token) throw new Error("create_rack needs an Authorization: Bearer <SkiHost API token> header");

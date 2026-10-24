@@ -21,6 +21,8 @@ export function GET(req: Request) {
                         node skihost.mjs rack create <name> --description "..."   (a rack is like a GitHub repo; create it once)
                         node skihost.mjs init --name <name> && node skihost.mjs push
                         (or: node skihost.mjs push --create-rack)
+6. Import from GitHub:  node skihost.mjs import https://github.com/owner/repo --list
+                        node skihost.mjs import https://github.com/owner/repo/tree/main/path/to/skill
 
 Every CLI command accepts --json for machine-readable output.
 
@@ -32,13 +34,14 @@ Every CLI command accepts --json for machine-readable output.
 - GET  ${b}/api/v1/packages/{owner}/{name}/download?version=<v>                         (zip)
 - POST ${b}/api/v1/agent   {"message": "what you need"}                                  (marketplace agent)
 - POST ${b}/api/v1/racks   (Authorization: Bearer <token>) {"name": "...", "description": "...", "type": "skill"}   create a rack first
+- POST ${b}/api/v1/import  (Authorization: Bearer <token>) {"url": "https://github.com/owner/repo", "path": "folder"}   import a public GitHub folder
 - POST ${b}/api/v1/publish (Authorization: Bearer <token>) JSON {"manifest": {...}, "files": {"SKILL.md": "..."}} or a zip body
 - OpenAPI: ${b}/openapi.json
 
 ## MCP
 
 Streamable HTTP endpoint: ${b}/api/mcp
-Tools: search_packages, ask_marketplace, get_package, get_package_files, install_instructions, create_rack, publish_package, whoami
+Tools: search_packages, ask_marketplace, get_package, get_package_files, install_instructions, create_rack, import_from_github, publish_package, whoami
 
 ## A2A (Agent2Agent)
 

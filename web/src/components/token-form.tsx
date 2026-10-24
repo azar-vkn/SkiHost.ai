@@ -11,6 +11,12 @@ export function TokenForm({ base }: { base: string }) {
     <div className="space-y-4">
       <form action={action} className="flex gap-2">
         <input name="name" placeholder="Token name, e.g. laptop or research-agent" className="input" maxLength={80} required />
+        <select name="expires" defaultValue="90" className="input w-36 shrink-0" aria-label="Expires">
+          <option value="30">30 days</option>
+          <option value="90">90 days</option>
+          <option value="365">1 year</option>
+          <option value="0">No expiry</option>
+        </select>
         <button disabled={pending} className="btn btn-primary shrink-0">
           <KeyRound className="h-4 w-4" /> {pending ? "Creating…" : "Generate token"}
         </button>

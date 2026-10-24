@@ -57,7 +57,7 @@ export function AuthForm({ mode, next, google, error }: { mode: "login" | "signu
         </Field>
         <Field
           label="Password"
-          hint={isLogin ? undefined : "At least 8 characters"}
+          hint={isLogin ? undefined : "At least 10 characters"}
           action={
             isLogin ? (
               <Link href="/forgot-password" className="text-xs text-accent hover:underline">
@@ -66,8 +66,9 @@ export function AuthForm({ mode, next, google, error }: { mode: "login" | "signu
             ) : undefined
           }
         >
-          <input name="password" type="password" required minLength={isLogin ? undefined : 8} autoComplete={isLogin ? "current-password" : "new-password"} className="input" />
+          <input name="password" type="password" required minLength={isLogin ? undefined : 10} autoComplete={isLogin ? "current-password" : "new-password"} className="input" />
         </Field>
+        {!isLogin && <TermsCheckbox />}
         <Messages state={state} error={error} />
         <button disabled={pending} className="btn btn-primary w-full">
           {pending ? "Please wait…" : isLogin ? "Sign in" : "Create account"}
@@ -120,11 +121,11 @@ export function ResetPasswordForm({ email, hasPassword }: { email: string; hasPa
     >
       <form action={action} className="space-y-4">
         <input type="email" name="username" autoComplete="username" value={email} readOnly hidden />
-        <Field label="New password" hint="At least 8 characters">
-          <input name="password" type="password" required minLength={8} autoComplete="new-password" className="input" />
+        <Field label="New password" hint="At least 10 characters">
+          <input name="password" type="password" required minLength={10} autoComplete="new-password" className="input" />
         </Field>
         <Field label="Confirm new password">
-          <input name="confirm" type="password" required minLength={8} autoComplete="new-password" className="input" />
+          <input name="confirm" type="password" required minLength={10} autoComplete="new-password" className="input" />
         </Field>
         <Messages state={state} />
         <button disabled={pending} className="btn btn-primary w-full">
@@ -154,12 +155,32 @@ export function WelcomeForm({ username, displayName, next }: { username: string;
             autoFocus
           />
         </Field>
+        <TermsCheckbox />
         <Messages state={state} />
         <button disabled={pending} className="btn btn-primary w-full">
           {pending ? "Saving…" : "Continue"}
         </button>
       </form>
     </AuthShell>
+  );
+}
+
+function TermsCheckbox() {
+  return (
+    <label className="flex items-start gap-2 text-xs text-muted">
+      <input type="checkbox" name="terms" required className="mt-0.5 accent-[var(--accent)]" />
+      <span>
+        I agree to the{" "}
+        <Link href="/terms" target="_blank" className="text-accent hover:underline">
+          Terms of Service and Acceptable Use Policy
+        </Link>{" "}
+        and the{" "}
+        <Link href="/privacy" target="_blank" className="text-accent hover:underline">
+          Privacy Policy
+        </Link>
+        .
+      </span>
+    </label>
   );
 }
 

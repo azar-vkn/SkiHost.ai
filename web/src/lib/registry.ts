@@ -15,6 +15,8 @@ export interface PackageSummary {
   stars: number;
   updated_at: string;
   created_at: string;
+  /** "quarantined" racks were disabled by moderators: hidden from search, not downloadable. */
+  status?: "active" | "quarantined";
 }
 
 export interface PackageVersion {
@@ -28,6 +30,9 @@ export interface PackageVersion {
   readme: string | null;
   manifest: Manifest;
   created_at: string;
+  yanked_at: string | null;
+  yank_reason: string | null;
+  risk_flags: string[];
 }
 
 export interface PackageDetail extends PackageSummary {
@@ -37,6 +42,8 @@ export interface PackageDetail extends PackageSummary {
   repository: string | null;
   readme: string | null;
   owner_display_name: string | null;
+  status: "active" | "quarantined";
+  status_reason: string | null;
   versions: PackageVersion[];
 }
 
@@ -73,6 +80,17 @@ const ERROR_STATUS: Record<string, [number, string]> = {
   rack_exists: [409, "You already have a rack with that name"],
   description_required: [400, "A rack needs a description"],
   invalid_type: [400, "Unknown rack type"],
+  rate_limited: [429, "Too many requests. Please wait a little and try again."],
+  rack_disabled: [403, "This rack has been disabled by SkiHost moderators and can't be downloaded or pushed to."],
+  storage_quota_exceeded: [413, "Your account has reached its 250 MB storage limit. Delete old racks or versions to free space."],
+  version_limit: [400, "This rack has reached its limit of 1000 versions."],
+  rack_limit: [400, "You've reached the limit of 200 racks per account."],
+  token_limit: [400, "You have 50 active tokens. Revoke some before creating more."],
+  account_suspended: [403, "This account has been suspended. Contact SkiHost support if you think this is a mistake."],
+  mfa_required: [403, "This account uses two-factor authentication: complete the code check in your browser, or use an API token."],
+  forbidden: [403, "You don't have permission to do that."],
+  confirmation_mismatch: [400, "The confirmation text didn't match."],
+  invalid_request: [400, "Invalid request."],
 };
 
 export class RegistryError extends Error {
@@ -91,7 +109,7 @@ function fail(error: { message: string } | null): never {
 }
 
 const SUMMARY_COLUMNS =
-  "id, name, type, description, keywords, agents, category, license, homepage, repository, readme, latest_version, downloads, stars, updated_at, created_at, owner:profiles!packages_owner_id_fkey!inner(username, display_name)";
+  "id, name, type, description, keywords, agents, category, license, homepage, repository, readme, latest_version, downloads, stars, updated_at, created_at, status, status_reason, owner:profiles!packages_owner_id_fkey!inner(username, display_name)";
 
 export async function searchPackages(db: SupabaseClient, p: SearchParams) {
   const { data, error } = await db.rpc("search_packages", {
@@ -117,7 +135,7 @@ export async function getPackage(db: SupabaseClient, owner: string, name: string
   const { data, error } = await db
     .from("packages")
     .select(
-      `${SUMMARY_COLUMNS}, versions:package_versions(id, version, sha256, size, file_count, downloads, changelog, readme, manifest, created_at)`,
+      `${SUMMARY_COLUMNS}, versions:package_versions(id, version, sha256, size, file_count, downloads, changelog, readme, manifest, created_at, yanked_at, yank_reason, risk_flags)`,
     )
     .eq("owner.username", owner)
     .eq("name", name)
@@ -218,15 +236,81 @@ export async function getFile(db: SupabaseClient, versionId: string, path: strin
 }
 
 export async function downloadArchive(db: SupabaseClient, owner: string, name: string, version?: string | null) {
-  const { data, error } = await db.rpc("download_archive", {
-    p_owner: owner,
-    p_name: name,
-    p_version: version || null,
-  });
+  // With the server secret, downloads use the server-only function (accurate counts, quarantine and
+  // yank info). The legacy function is only a bridge until the secret is configured; 0006 removes it.
+  const secret = process.env.SKIHOST_SERVER_SECRET;
+  const { data, error } = secret
+    ? await db.rpc("download_archive_v2", { p_secret: secret, p_owner: owner, p_name: name, p_version: version || null })
+    : await db.rpc("download_archive", { p_owner: owner, p_name: name, p_version: version || null });
   if (error) fail(error);
-  const d = data as { version: string; sha256: string; size: number; type: string; manifest: Manifest; data: string };
-  return { ...d, bytes: Buffer.from(d.data, "base64") };
+  const d = data as {
+    version: string;
+    sha256: string;
+    size: number;
+    type: string;
+    manifest: Manifest;
+    data: string;
+    yanked?: boolean;
+    yank_reason?: string | null;
+    risk_flags?: string[];
+  };
+  return { ...d, yanked: !!d.yanked, risk_flags: d.risk_flags ?? [], bytes: Buffer.from(d.data, "base64") };
 }
+
+/** Pull (or restore) a version. "latest" moves to the newest version that isn't yanked. */
+export async function yankVersion(db: SupabaseClient, token: string | null, owner: string, name: string, version: string, reason: string | null, yank = true) {
+  const { data, error } = await db.rpc("yank_version", { p_token: token, p_owner: owner, p_name: name, p_version: version, p_reason: reason, p_yank: yank });
+  if (error) fail(error);
+  return data as { version: string; yanked: boolean; latest_version: string | null };
+}
+
+import { REPORT_REASONS, type ReportReason } from "./report-reasons";
+export { REPORT_REASONS, type ReportReason };
+
+export async function reportPackage(db: SupabaseClient, token: string | null, owner: string, name: string, reason: string, details: string | null) {
+  const { data, error } = await db.rpc("report_package", { p_token: token, p_owner: owner, p_name: name, p_reason: reason, p_details: details });
+  if (error) fail(error);
+  return data as { id: string; status: string };
+}
+
+export interface ReportRow {
+  id: string;
+  reason: ReportReason;
+  details: string | null;
+  status: "open" | "actioned" | "dismissed";
+  resolution: string | null;
+  created_at: string;
+  resolved_at: string | null;
+  reporter: string | null;
+  owner: string;
+  name: string;
+  rack_status: "active" | "quarantined";
+  owner_suspended: boolean;
+}
+
+export const admin = {
+  async listReports(db: SupabaseClient, status = "open") {
+    const { data, error } = await db.rpc("admin_list_reports", { p_token: null, p_status: status });
+    if (error) fail(error);
+    return (data ?? []) as ReportRow[];
+  },
+  async resolveReport(db: SupabaseClient, id: string, status: string, resolution: string | null) {
+    const { error } = await db.rpc("admin_resolve_report", { p_token: null, p_id: id, p_status: status, p_resolution: resolution });
+    if (error) fail(error);
+  },
+  async setRackStatus(db: SupabaseClient, owner: string, name: string, status: string, reason: string | null) {
+    const { error } = await db.rpc("admin_set_rack_status", { p_token: null, p_owner: owner, p_name: name, p_status: status, p_reason: reason });
+    if (error) fail(error);
+  },
+  async deleteRack(db: SupabaseClient, owner: string, name: string) {
+    const { error } = await db.rpc("admin_delete_rack", { p_token: null, p_owner: owner, p_name: name });
+    if (error) fail(error);
+  },
+  async suspendUser(db: SupabaseClient, username: string, suspend: boolean, reason: string | null) {
+    const { error } = await db.rpc("admin_suspend_user", { p_token: null, p_username: username, p_suspend: suspend, p_reason: reason });
+    if (error) fail(error);
+  },
+};
 
 export async function publishPackage(db: SupabaseClient, token: string | null, pkg: BuiltPackage) {
   const m = pkg.manifest;
@@ -250,6 +334,7 @@ export async function publishPackage(db: SupabaseClient, token: string | null, p
     p_files: pkg.files,
     p_archive_b64: Buffer.from(pkg.archive).toString("base64"),
     p_sha256: pkg.sha256,
+    p_risk_flags: pkg.riskFlags,
   });
   if (error) fail(error);
   return data as { owner: string; name: string; version: string; first_version: boolean; sha256: string; size: number };

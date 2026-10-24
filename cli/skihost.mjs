@@ -54,7 +54,7 @@ function parseArgs(argv) {
   return { positional, flags };
 }
 // `--version <semver>` takes a value (push); `skihost --version` is handled before parsing.
-const BOOLEAN_FLAGS = new Set(["json", "claude", "yes", "force", "dry-run", "help", "global", "create-rack"]);
+const BOOLEAN_FLAGS = new Set(["json", "claude", "yes", "force", "dry-run", "help", "global", "create-rack", "list", "confirm-rights", "undo", "insecure"]);
 const SHORT = { y: "yes", f: "force", h: "help", j: "json" };
 
 function loadConfig() {
@@ -572,6 +572,79 @@ const commands = {
     for (const [k, v] of Object.entries(shown)) console.log(`${c.dim(k.padEnd(9))} ${v ?? ""}`);
   },
 
+  /** Import a public GitHub repo (or one folder of it) as a rack; re-running it syncs new commits. */
+  async import({ positional, flags }, cfg) {
+    const url = positional[0];
+    if (!url) throw new CliError("Usage: skihost import <github-url> [--path folder] [--ref branch] [--name rack] [--description d] [--version v] [--list]");
+    const post = (path, body) =>
+      api(cfg, "POST", path, { auth: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+    let folder = flags.path;
+    const linksToFolder = /\/(tree|blob)\//.test(url);
+    if (flags.list || (folder === undefined && !linksToFolder)) {
+      // Look inside first: a repo can hold many skills, and importing its root is rarely what's wanted.
+      const preview = await post("/api/v1/import/preview", { url, ref: flags.ref });
+      if (flags.list || preview.candidates.length > 1) {
+        if (flags.json && flags.list) return preview;
+        console.log(`${c.bold(preview.repo)}@${preview.ref}${preview.commit ? c.dim(" " + preview.commit.slice(0, 7)) : ""}`);
+        for (const cand of preview.candidates)
+          console.log(`  ${c.blue((cand.path || "(root)").padEnd(36))} ${cand.name.padEnd(24)} ${c.cyan(cand.type)}  ${c.dim(cand.fileCount + " files")}${cand.existing ? c.yellow("  (your rack)") : ""}`);
+        if (flags.list) return;
+        throw new CliError(`${preview.candidates.length} folders found. Pick one with --path <folder>, e.g. --path ${preview.candidates[0].path || "."}`);
+      }
+      folder = preview.candidates[0]?.path ?? "";
+    }
+
+    let rights = !!flags["confirm-rights"];
+    if (!rights) {
+      if (!process.stdin.isTTY || flags.json)
+        throw new CliError("Pass --confirm-rights to confirm you may publish this code (it's yours, or its license allows redistribution).");
+      rights = /^y(es)?$/i.test(await prompt("Do you have the right to publish this code on SkiHost (it's yours, or its license allows it)? [y/N] "));
+      if (!rights) throw new CliError("Import cancelled.");
+    }
+    const res = await post("/api/v1/import", {
+      url,
+      confirm_rights: true,
+      path: folder,
+      ref: flags.ref,
+      name: flags.name,
+      description: flags.description,
+      version: flags.version,
+    });
+    if (flags.json) return res;
+    if (res.up_to_date) return console.log(`${c.green("✓")} ${res.id} is up to date with ${res.source.repo}@${res.source.ref} (v${res.version})`);
+    console.log(`${c.green("✓")} imported ${c.bold(`${res.id}@${res.version}`)} from ${res.source.repo}${res.source.path ? "/" + res.source.path : ""}${res.created_rack ? c.dim("  (new rack)") : ""}`);
+    console.log(`  ${res.url}`);
+    console.log(c.dim(`  Sync later commits with the same command. Anyone can now run: ${res.install}`));
+  },
+
+  /** Pull a bad version (or --undo to restore it). Exact installs still work; "latest" skips it. */
+  async yank({ positional, flags }, cfg) {
+    const { owner, name, version } = parseId(positional[0]);
+    if (!version) throw new CliError("Usage: skihost yank owner/name@1.2.3 [--reason \"why\"] [--undo]");
+    const res = await api(cfg, flags.undo ? "DELETE" : "POST", `/api/v1/packages/${owner}/${name}/versions/${encodeURIComponent(version)}/yank`, {
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: flags.undo ? undefined : JSON.stringify({ reason: flags.reason ?? null }),
+    });
+    if (flags.json) return res;
+    console.log(`${c.green("✓")} ${flags.undo ? "restored" : "yanked"} ${owner}/${name}@${version}; latest is now ${res.latest_version ?? "(none)"}`);
+  },
+
+  /** Report a rack to SkiHost moderators. */
+  async report({ positional, flags }, cfg) {
+    const { owner, name } = parseId(positional[0]);
+    const reasons = ["malware", "secrets", "spam", "copyright", "impersonation", "other"];
+    if (!reasons.includes(flags.reason)) throw new CliError(`Usage: skihost report owner/name --reason <${reasons.join("|")}> [--details "..."]`);
+    const res = await api(cfg, "POST", `/api/v1/packages/${owner}/${name}/report`, {
+      auth: true,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: flags.reason, details: flags.details ?? null }),
+    });
+    if (flags.json) return res;
+    console.log(`${c.green("✓")} reported ${owner}/${name}. Thanks — moderators will review it.`);
+  },
+
   /** Racks are the repositories of SkiHost: create one (with a description) before pushing to it. */
   async rack({ positional, flags }, cfg) {
     const [action, target] = positional;
@@ -634,12 +707,31 @@ async function fetchArchive(cfg, { owner, name, version }) {
   const sha256 = createHash("sha256").update(buf).digest("hex");
   const expected = res.headers.get("x-skihost-sha256");
   if (expected && expected !== sha256) throw new CliError(`Checksum mismatch for ${owner}/${name}: archive may be corrupted`);
-  return { files: unzip(buf), version: res.headers.get("x-skihost-version") ?? version, sha256 };
+  const yanked = res.headers.get("x-skihost-yanked");
+  const risk = (res.headers.get("x-skihost-risk-flags") ?? "").split(",").filter(Boolean);
+  return {
+    files: unzip(buf),
+    version: res.headers.get("x-skihost-version") ?? version,
+    sha256,
+    yanked: yanked ? decodeURIComponent(yanked) : null,
+    riskFlags: risk,
+  };
 }
+
+const RISK_TEXT = {
+  "downloads-and-executes": "downloads code from the internet and runs it (e.g. curl … | sh)",
+  "obfuscated-code": "contains encoded/obfuscated code that is executed",
+  "destructive-commands": "contains commands that can delete large parts of a system",
+  "reverse-shell": "contains patterns used to open a remote shell",
+  "crypto-mining": "references cryptocurrency mining",
+  "reads-credentials": "reads credential files (SSH keys, cloud credentials…)",
+  "binary-executables": "includes compiled executables that can't be reviewed as text",
+  "instruction-override-text": "contains text that tries to override an AI agent's instructions",
+};
 
 async function installOne(cfg, ref, flags) {
   const id = `${ref.owner}/${ref.name}`;
-  const { files, version, sha256 } = await fetchArchive(cfg, ref);
+  const { files, version, sha256, yanked, riskFlags } = await fetchArchive(cfg, ref);
   let manifest = {};
   try {
     manifest = JSON.parse(files["skihost.json"].toString("utf8"));
@@ -672,9 +764,14 @@ async function installOne(cfg, ref, flags) {
     sha256,
     requirements: requirementCommands,
     env: req.env ?? [],
+    yanked,
+    risk_flags: riskFlags,
   };
   if (!flags.json) {
     console.log(`${c.green("✓")} installed ${c.bold(`${id}@${version}`)} → ${target}`);
+    if (yanked) console.log(`  ${c.yellow("warning:")} this version was yanked by its publisher${yanked !== "yes" ? ` (${yanked})` : ""}. Prefer a newer version.`);
+    for (const f of riskFlags) console.log(`  ${c.yellow("review:")} ${RISK_TEXT[f] ?? f}`);
+    if (riskFlags.length) console.log(c.dim(`  Read the files in ${target} before running them.`));
     if (result.entry) console.log(c.dim(`  entry: ${path.relative(process.cwd(), result.entry) || result.entry}`));
     if (requirementCommands.length) console.log(`  ${c.yellow("requirements:")} ${requirementCommands.join(" && ")}`);
     if (result.env.length) console.log(`  ${c.yellow("needs env:")} ${result.env.join(", ")}`);
@@ -720,6 +817,9 @@ ${c.bold("Racks")} (like GitHub repositories: create one before you push)
   skihost rack create <name> --description "..." [--type skill] [--topics a,b] [--homepage u] [--repository u]
   skihost rack list [owner] | info <owner/name> | delete <owner/name>
   skihost rack edit <owner/name> [--description d] [--topics a,b] [--homepage u] [--repository u]
+  skihost import <github-url> [--path folder] [--ref branch] [--name rack] [--list] [--confirm-rights]   import or sync from GitHub
+  skihost yank <owner/name@version> [--reason "why"] [--undo]   pull a bad version
+  skihost report <owner/name> --reason <malware|secrets|spam|copyright|impersonation|other>
 
 ${c.bold("Publish")}
   skihost login [--token <skh_...>] [--email <e>]  get a token at <registry>/settings/tokens
@@ -745,6 +845,10 @@ async function main() {
   if (!run) throw new CliError(`Unknown command "${cmd}". Run \`skihost help\`.`);
   if (args.flags.help) return console.log(HELP);
   const cfg = loadConfig();
+  const reg = new URL(cfg.registry);
+  const local = ["localhost", "127.0.0.1", "[::1]"].includes(reg.hostname);
+  if (reg.protocol !== "https:" && !local && !args.flags.insecure && !process.env.SKIHOST_INSECURE)
+    throw new CliError(`Refusing to use ${cfg.registry}: it isn't https, so tokens and packages could be intercepted. Use an https registry (or --insecure if you really mean it).`);
   const out = await run(args, cfg);
   if (args.flags.json && out !== undefined) console.log(JSON.stringify(out, null, 2));
 }

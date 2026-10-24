@@ -8,6 +8,7 @@ const TOC = [
   ["Getting started", "getting-started"],
   ["CLI", "cli"],
   ["Racks", "racks"],
+  ["Import from GitHub", "github"],
   ["Package format", "manifest"],
   ["Publishing", "publish"],
   ["Agent recipe", "agent-recipe"],
@@ -88,6 +89,9 @@ Every command accepts \`--json\` and exits non-zero on failure, so agents can sc
 | \`skihost login [--token skh_…]\` | Store a token (or exchange email + password for one) |
 | \`skihost rack create <name> --description "…"\` | Create a rack (like a GitHub repo) before the first push |
 | \`skihost rack list / edit / delete\` | Manage racks |
+| \`skihost import <github-url> [--path folder] [--list] [--confirm-rights]\` | Import (or re-sync) a GitHub repo folder as a rack |
+| \`skihost yank <owner/name@version> [--reason "…"] [--undo]\` | Pull a bad version; "latest" skips it, pinned installs still work |
+| \`skihost report <owner/name> --reason <malware\|secrets\|spam\|copyright\|impersonation\|other>\` | Report a rack to moderators |
 | \`skihost init [--type skill]\` | Scaffold \`skihost.json\`, \`SKILL.md\` and \`README.md\` |
 | \`skihost push [dir] [--bump patch] [--rack name] [--create-rack]\` | Push the folder as a new version of its rack |
 | \`skihost star\` / \`unstar\` / \`delete <id>\` | Manage packages |
@@ -108,6 +112,20 @@ A **rack** is SkiHost's repository. It is created once under your account with a
 | Delete | \`skihost rack delete <owner/name>\` | Edit → Delete rack | \`DELETE /api/v1/racks/{owner}/{name}\` |
 
 Pushing to a rack that doesn't exist fails with \`rack_not_found\`. A new rack is **empty** until its first push: its page shows quick-setup instructions, and it can't be installed or found in search yet. Tick **Add a starter version** when creating a rack on the website to make it installable right away.
+
+## Import from GitHub {#github}
+
+Already keep your skill in a GitHub repository? Import it instead of re-uploading. SkiHost downloads the public repo, finds every folder with a \`SKILL.md\` or \`skihost.json\`, and turns the one you pick into a rack version. It creates the rack if you don't have it yet, taking the name and description from the skill.
+
+| Where | How |
+| --- | --- |
+| Website | **New rack → Import from GitHub**: paste a repo or folder URL, pick a folder, import. Or link straight to \`${b}/new?import=<github-url>\` |
+| Terminal | \`skihost import https://github.com/owner/repo --list\` to see the folders, then \`skihost import https://github.com/owner/repo/tree/main/skills/pdf\` (or \`--path skills/pdf\`) |
+| Agents | \`POST /api/v1/import\` with \`{ "url": "...", "path": "...", "name": "..." }\` (preview with \`POST /api/v1/import/preview\`), or the MCP tool \`import_from_github\` |
+
+Every imported version records its source (repo, branch, folder and exact commit) in \`skihost.json\` and on the rack page. To pick up new commits, press **Sync from GitHub** on the rack page or run the same \`skihost import\` command again. Nothing is pushed when the branch hasn't changed; otherwise the next patch version is created, or the version declared in the repo if it's new.
+
+Only public repositories can be imported, up to 60 MB per repo download and 4 MB per compressed rack version.
 
 ## Package format {#manifest}
 
@@ -195,6 +213,7 @@ Reads are public. Writes take \`Authorization: Bearer <token>\`. Full spec: [/op
 | GET | \`/api/v1/packages/{owner}/{name}/versions/{version}/files?content=1\` | Every file with its text |
 | GET | \`/api/v1/packages/{owner}/{name}/download?version=\` | Zip archive (sha256 in \`X-SkiHost-Sha256\`) |
 | POST | \`/api/v1/racks\` | Create a rack |
+| POST | \`/api/v1/import\` | Import a GitHub repo folder as a rack version (\`/api/v1/import/preview\` lists folders first) |
 | GET | \`/api/v1/racks?owner=\` | List an owner's racks (including empty ones) |
 | PATCH | \`/api/v1/racks/{owner}/{name}\` | Edit a rack's About details |
 | POST | \`/api/v1/publish\` | Push a version into an existing rack (\`?name=\` picks the rack) |
@@ -206,7 +225,7 @@ Reads are public. Writes take \`Authorization: Bearer <token>\`. Full spec: [/op
 
 ## MCP server {#mcp}
 
-SkiHost is an MCP server over Streamable HTTP at \`${b}/api/mcp\`. Tools: \`search_packages\`, \`ask_marketplace\`, \`get_package\`, \`get_package_files\`, \`install_instructions\`, \`create_rack\`, \`publish_package\`, \`whoami\`. The token header is only needed for publishing.
+SkiHost is an MCP server over Streamable HTTP at \`${b}/api/mcp\`. Tools: \`search_packages\`, \`ask_marketplace\`, \`get_package\`, \`get_package_files\`, \`install_instructions\`, \`create_rack\`, \`import_from_github\`, \`publish_package\`, \`whoami\`. The token header is only needed for publishing.
 
 \`\`\`bash
 # Claude Code

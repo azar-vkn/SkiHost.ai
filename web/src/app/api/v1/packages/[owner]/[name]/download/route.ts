@@ -1,4 +1,5 @@
 import { createAnonClient } from "@/utils/supabase/server";
+import { rateLimit } from "@/lib/rate-limit";
 import { CORS_HEADERS, errorResponse, preflight } from "@/lib/http";
 import { downloadArchive, getPackage, RegistryError } from "@/lib/registry";
 
@@ -6,12 +7,22 @@ type Ctx = { params: Promise<{ owner: string; name: string }> };
 
 export const OPTIONS = preflight;
 
-/** The package as a .zip (`?version=1.2.0`, default latest). Counts as a download. */
+/**
+ * The package as a .zip (`?version=1.2.0`, default latest). Counts as a download.
+ * X-SkiHost-Yanked and X-SkiHost-Risk-Flags tell installers what they're getting.
+ */
 export async function GET(req: Request, { params }: Ctx) {
   try {
+    await rateLimit(req.headers, "download");
     const { owner, name } = await params;
     const version = new URL(req.url).searchParams.get("version");
-    const a = await downloadArchive(createAnonClient(), owner, name, version);
+    const db = createAnonClient();
+    if (!process.env.SKIHOST_SERVER_SECRET) {
+      // The legacy download path doesn't know about moderation; check it here until the secret is set.
+      const pkg = await getPackage(db, owner, name);
+      if (pkg?.status === "quarantined") throw new RegistryError("This rack has been disabled by SkiHost moderators.", 403, "rack_disabled");
+    }
+    const a = await downloadArchive(db, owner, name, version);
     return new Response(new Uint8Array(a.bytes), {
       headers: {
         ...CORS_HEADERS,
@@ -19,8 +30,11 @@ export async function GET(req: Request, { params }: Ctx) {
         "Content-Length": String(a.bytes.byteLength),
         "Content-Disposition": `attachment; filename="${name}-${a.version}.zip"`,
         "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff",
         "X-SkiHost-Version": a.version,
         "X-SkiHost-Sha256": a.sha256,
+        "X-SkiHost-Yanked": a.yanked ? encodeURIComponent(a.yank_reason || "yes") : "",
+        "X-SkiHost-Risk-Flags": a.risk_flags.join(","),
       },
     });
   } catch (err) {
@@ -29,7 +43,7 @@ export async function GET(req: Request, { params }: Ctx) {
       const { owner, name } = await params;
       const pkg = await getPackage(createAnonClient(), owner, name).catch(() => null);
       if (pkg && !pkg.latest_version) {
-        return errorResponse(new RegistryError(`${owner}/${name} is an empty rack: nothing has been pushed to it yet`, 404, "rack_empty"));
+        return errorResponse(new RegistryError(`${owner}/${name} has no installable version yet (it's empty, or every version was yanked)`, 404, "rack_empty"));
       }
     }
     return errorResponse(err);
