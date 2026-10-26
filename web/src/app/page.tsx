@@ -250,7 +250,7 @@ function ListCard({ title, href, items }: { title: string; href: string; items: 
       </div>
       <div className="px-5">
         {items.length ? (
-          items.map((p) => <PackageRow key={`${p.owner}/${p.name}`} pkg={p} />)
+          items.map((p) => <PackageRow key={`${p.owner}/${p.name}`} pkg={p} compact />)
         ) : (
           <p className="py-10 text-center text-sm text-muted">
             Nothing here yet. <Link href="/new" className="text-accent hover:underline">Create the first rack</Link>.
