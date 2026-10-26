@@ -35,6 +35,8 @@ export interface Candidate {
   version: string | null;
   fileCount: number;
   size: number;
+  /** Unpacks to more than the import limit, so it can be listed but not imported. */
+  tooBig: boolean;
 }
 
 export interface LoadedRepo {
@@ -42,15 +44,18 @@ export interface LoadedRepo {
   ref: string;
   commit: string | null;
   info: RepoInfo | null;
-  /** Files of the selected folder, keyed by path relative to that folder. */
+  /** Files of the selected folder, keyed by path relative to that folder (empty when it's too big). */
   files: Record<string, Uint8Array>;
+  /** The selected folder unpacks to more than MAX_SELECTED_MB, so its files weren't loaded. */
+  tooBig: boolean;
   candidates: Candidate[];
 }
 
 const OWNER_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const REPO_RE = /^[A-Za-z0-9._-]{1,100}$/;
 const MAX_DOWNLOAD = 60 * 1024 * 1024;
-const MAX_SELECTED = 20 * 1024 * 1024;
+export const MAX_SELECTED_MB = 20;
+const MAX_SELECTED = MAX_SELECTED_MB * 1024 * 1024;
 
 export class ImportError extends PackageError {
   code = "import_failed";
@@ -195,7 +200,11 @@ async function downloadZip(owner: string, repo: string, ref: string): Promise<Ui
   return out;
 }
 
-/** Download a repo and return the selected folder's files plus every skill-like folder found in it. */
+/**
+ * Download a repo and return the selected folder's files plus every skill-like folder found in it.
+ * A selected folder over the size limit doesn't fail the lookup (a big repo can still hold small
+ * skills to pick from); it comes back with `tooBig` and no files, and importing it is refused.
+ */
 export async function loadFromGitHub(url: string, opts: { path?: string | null; ref?: string | null } = {}): Promise<LoadedRepo> {
   const parsed = parseGitHubUrl(url);
   const location = { ...parsed, ref: opts.ref || parsed.ref, path: opts.path != null ? normalizePath(opts.path) : parsed.path };
@@ -207,6 +216,7 @@ export async function loadFromGitHub(url: string, opts: { path?: string | null; 
   const prefix = location.path ? location.path + "/" : "";
   const sizes = new Map<string, number>();
   let selectedBytes = 0;
+  let tooBig = false;
   let entries: Record<string, Uint8Array>;
   try {
     entries = unzipSync(zip, {
@@ -216,16 +226,15 @@ export async function loadFromGitHub(url: string, opts: { path?: string | null; 
         sizes.set(rel, f.originalSize);
         const base = rel.split("/").pop()!;
         const isMeta = base === "SKILL.md" || base === "skihost.json";
-        const selected = rel.startsWith(prefix);
-        if (selected) {
-          selectedBytes += f.originalSize;
-          if (selectedBytes > MAX_SELECTED) throw new ImportError("The selected folder unpacks to more than 20 MB. Pick a smaller folder", 413);
-        }
-        return selected || (isMeta && f.originalSize < 256 * 1024);
+        const smallMeta = isMeta && f.originalSize < 256 * 1024;
+        if (!rel.startsWith(prefix)) return smallMeta;
+        selectedBytes += f.originalSize;
+        // Past the limit, stop unpacking the selection but keep scanning for skill folders.
+        if (selectedBytes > MAX_SELECTED) tooBig = true;
+        return tooBig ? smallMeta : true;
       },
     });
-  } catch (err) {
-    if (err instanceof ImportError) throw err;
+  } catch {
     throw new ImportError("GitHub's archive for that repository couldn't be read", 502);
   }
 
@@ -237,10 +246,10 @@ export async function loadFromGitHub(url: string, opts: { path?: string | null; 
     if (r.endsWith("/SKILL.md") || r.endsWith("/skihost.json") || r === "SKILL.md" || r === "skihost.json") meta.set(r, data);
     if (r.startsWith(prefix)) files[r.slice(prefix.length)] = data;
   }
-  if (location.path && !Object.keys(files).length)
+  if (location.path && ![...sizes.keys()].some((p) => p.startsWith(prefix)))
     throw new ImportError(`There's no folder "${location.path}" in ${location.owner}/${location.repo}@${ref}`, 404);
 
-  return { location, ref, commit, info, files, candidates: findCandidates(meta, sizes, location, info) };
+  return { location, ref, commit, info, files: tooBig ? {} : files, tooBig, candidates: findCandidates(meta, sizes, location, info) };
 }
 
 /** Folders that hold a SKILL.md or skihost.json; the repo root if none do. */
@@ -272,6 +281,7 @@ function findCandidates(meta: Map<string, Uint8Array>, sizes: Map<string, number
       version: m.version,
       fileCount,
       size,
+      tooBig: size > MAX_SELECTED,
     });
   }
   // Most specific first is confusing in a list; show the repo order instead.

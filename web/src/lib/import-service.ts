@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildPackage, PACKAGE_TYPES, SEMVER_RE, type PackageType } from "./package-format";
 import { createRack, getPackage, publishPackage, RegistryError, whoami } from "./registry";
 import { accountQuota } from "./rate-limit";
-import { ImportError, loadFromGitHub, readMeta, sourceFor, suggestName, type Candidate, type RepoInfo } from "./github-import";
+import { ImportError, loadFromGitHub, MAX_SELECTED_MB, readMeta, sourceFor, suggestName, type Candidate, type RepoInfo } from "./github-import";
 
 export interface ImportRequest {
   url: string;
@@ -40,10 +40,19 @@ export async function previewImport(db: SupabaseClient, token: string | null, re
   const scoped = prefix
     ? loaded.candidates.filter((c) => c.path === prefix || c.path.startsWith(prefix + "/"))
     : loaded.candidates;
+  if (!scoped.length && loaded.tooBig) throw tooBigError(`${loaded.location.owner}/${loaded.location.repo}`, prefix, loaded.ref, true);
   // A folder link without a SKILL.md/skihost.json is still importable as-is.
   const candidates = scoped.length
     ? scoped
-    : [{ path: prefix, ...suggest(loaded.files, prefix, loaded.location.repo, loaded.info), fileCount: Object.keys(loaded.files).length, size: 0 }];
+    : [
+        {
+          path: prefix,
+          ...suggest(loaded.files, prefix, loaded.location.repo, loaded.info),
+          fileCount: Object.keys(loaded.files).length,
+          size: Object.values(loaded.files).reduce((s, f) => s + f.byteLength, 0),
+          tooBig: false,
+        },
+      ];
 
   const withExisting = await Promise.all(
     candidates.map(async (c) => {
@@ -74,6 +83,7 @@ export async function importFromGitHub(db: SupabaseClient, token: string | null,
     );
   await accountQuota(token, db, "import", 20, 3600);
   const loaded = await loadFromGitHub(req.url, { ref: req.ref, path: req.path ?? null });
+  if (loaded.tooBig) throw tooBigError(`${loaded.location.owner}/${loaded.location.repo}`, loaded.location.path, loaded.ref, false);
   if (!Object.keys(loaded.files).length) throw new ImportError("There are no files to import at that location");
 
   const meta = suggest(loaded.files, loaded.location.path, loaded.location.repo, loaded.info);
@@ -126,6 +136,16 @@ export async function importFromGitHub(db: SupabaseClient, token: string | null,
   });
   const result = await publishPackage(db, token, pkg);
   return { up_to_date: false as const, ...result, created_rack: createdRack, files: pkg.files.length, source };
+}
+
+function tooBigError(repo: string, path: string, ref: string, noSkills: boolean) {
+  const where = path ? `The folder "${path}"` : `The ${repo} repository`;
+  const why = noSkills ? " and has no folders with a SKILL.md or skihost.json" : "";
+  return new ImportError(
+    `${where} unpacks to more than ${MAX_SELECTED_MB} MB${why}, so it can't be imported as one rack. ` +
+      `Link to the folder you need instead, like https://github.com/${repo}/tree/${ref}/<folder>`,
+    413,
+  );
 }
 
 function suggest(files: Record<string, Uint8Array>, dir: string, repo: string, info: RepoInfo | null) {

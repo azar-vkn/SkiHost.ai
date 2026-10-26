@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ExternalLink, FolderGit2, GitCommitHorizontal, Loader2, Scale, Search, Star } from "lucide-react";
+import { formatBytes } from "@/lib/format";
 import { TypeBadge } from "./type-badge";
 
 type Candidate = {
@@ -12,6 +13,8 @@ type Candidate = {
   type: string;
   version: string | null;
   fileCount: number;
+  size: number;
+  tooBig: boolean;
   existing: { latest_version: string | null } | null;
 };
 type Preview = {
@@ -56,7 +59,8 @@ export function GitHubImport({ username, initialUrl = "" }: { username: string; 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message ?? "Couldn't read that repository");
       setPreview(data);
-      if (data.candidates.length === 1) choose(data.candidates[0]);
+      const importable = (data as Preview).candidates.filter((c) => !c.tooBig);
+      if (importable.length === 1) choose(importable[0]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't read that repository");
     } finally {
@@ -159,14 +163,30 @@ export function GitHubImport({ username, initialUrl = "" }: { username: string; 
           <ul className="max-h-80 divide-y divide-line-muted overflow-y-auto">
             {preview.candidates.map((c) => (
               <li key={c.path}>
-                <label className={`flex cursor-pointer items-start gap-3 px-4 py-2.5 ${selected?.path === c.path ? "bg-accent-subtle" : "hover:bg-subtle"}`}>
-                  <input type="radio" name="candidate" checked={selected?.path === c.path} onChange={() => choose(c)} className="mt-1 accent-[var(--accent)]" />
+                <label
+                  className={`flex items-start gap-3 px-4 py-2.5 ${
+                    c.tooBig ? "cursor-not-allowed opacity-60" : selected?.path === c.path ? "cursor-pointer bg-accent-subtle" : "cursor-pointer hover:bg-subtle"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="candidate"
+                    checked={selected?.path === c.path}
+                    disabled={c.tooBig}
+                    onChange={() => choose(c)}
+                    className="mt-1 accent-[var(--accent)]"
+                  />
                   <span className="min-w-0 flex-1">
                     <span className="flex flex-wrap items-center gap-2 text-sm">
                       <span className="font-mono text-xs text-muted">{c.path || "(repository root)"}</span>
                       <span className="font-semibold">{c.name}</span>
                       <TypeBadge type={c.type} />
-                      <span className="text-xs text-faint">{c.fileCount} files</span>
+                      <span className="text-xs text-faint">
+                        {c.fileCount} files{c.size ? ` · ${formatBytes(c.size)}` : ""}
+                      </span>
+                      {c.tooBig && (
+                        <span className="rounded-full border border-warning/50 px-1.5 text-[0.7rem] text-warning">over 20 MB, can&apos;t import</span>
+                      )}
                       {c.existing && (
                         <span className="rounded-full border border-accent-line px-1.5 text-[0.7rem] text-accent">
                           your rack{c.existing.latest_version ? ` v${c.existing.latest_version}` : ""}
