@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Boxes, ChevronDown, KeyRound, Lock, LogOut, Palette, Plus, ShieldAlert, User } from "lucide-react";
+import { Boxes, ChevronDown, KeyRound, Lock, LogOut, Palette, Plus, ShieldAlert, User, UserPen } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "@/app/actions/auth";
 
@@ -37,6 +37,9 @@ export function UserMenu({ username, isAdmin = false }: { username: string; isAd
           </Link>
           <Link href={`/${username}`} className={item}>
             <Boxes className="h-4 w-4" /> Your racks
+          </Link>
+          <Link href="/settings/profile" className={item}>
+            <UserPen className="h-4 w-4" /> Edit profile
           </Link>
           <Link href="/new" className={item}>
             <Plus className="h-4 w-4" /> New rack

@@ -60,9 +60,14 @@ export default async function ProfilePage({ params, searchParams }: { params: Pa
           </li>
         </ul>
         {me?.username === owner && (
-          <Link href="/settings/tokens" className="btn mt-5 w-full">
-            Manage API tokens
-          </Link>
+          <div className="mt-5 space-y-2">
+            <Link href="/settings/profile" className="btn w-full">
+              Edit profile
+            </Link>
+            <Link href="/settings/tokens" className="btn w-full">
+              Manage API tokens
+            </Link>
+          </div>
         )}
       </aside>
 

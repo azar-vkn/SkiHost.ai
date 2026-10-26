@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { KeyRound, Palette, ShieldCheck } from "lucide-react";
+import { KeyRound, Palette, ShieldCheck, User } from "lucide-react";
 
 const TABS = [
+  { href: "/settings/profile", label: "Profile", icon: User },
   { href: "/settings/tokens", label: "API tokens", icon: KeyRound },
   { href: "/settings/security", label: "Security & account", icon: ShieldCheck },
   { href: "/settings/appearance", label: "Appearance", icon: Palette },

@@ -83,6 +83,55 @@ export async function changeEmail(_prev: FormState, form: FormData): Promise<For
   return { notice: `Confirmation links were sent to your current address and to ${email}. The change applies once you open them.` };
 }
 
+// Same limits as the profiles_*_check constraints (migration 0009) and the settings form.
+const PROFILE_LIMITS = { displayName: 60, bio: 300, website: 200 } as const;
+
+/** Display name, bio and website shown on the public profile page. */
+export async function updateProfile(_prev: FormState, form: FormData): Promise<FormState> {
+  const displayName = String(form.get("display_name") ?? "").trim();
+  const bio = String(form.get("bio") ?? "").trim().replace(/\r\n/g, "\n");
+  let website = String(form.get("website") ?? "").trim();
+
+  if (displayName.length > PROFILE_LIMITS.displayName) return { error: `Display name can be at most ${PROFILE_LIMITS.displayName} characters.` };
+  if (/[\x00-\x1f\x7f]/.test(displayName)) return { error: "Display name can't contain control characters." };
+  if (bio.length > PROFILE_LIMITS.bio) return { error: `Bio can be at most ${PROFILE_LIMITS.bio} characters.` };
+  if (/[\x00-\x09\x0b-\x1f\x7f]/.test(bio)) return { error: "Bio can't contain control characters." };
+  if (website) {
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(website)) website = `https://${website}`;
+    let url: URL;
+    try {
+      url = new URL(website);
+    } catch {
+      return { error: "Enter a valid website address, like https://example.com." };
+    }
+    if (!["http:", "https:"].includes(url.protocol) || !url.hostname.includes(".") || /\s/.test(website)) {
+      return { error: "Website must be an http or https address, like https://example.com." };
+    }
+    if (website.length > PROFILE_LIMITS.website) return { error: `Website can be at most ${PROFILE_LIMITS.website} characters.` };
+  }
+
+  try {
+    await rateLimit(await headers(), "write");
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Too many requests" };
+  }
+  const db = await createClient();
+  const { data: auth, error: claimsError } = await db.auth.getClaims();
+  if (claimsError && claimsError.name !== "AuthSessionMissingError" && !/jwt|session|token/i.test(claimsError.message))
+    return { error: "Couldn't reach the sign-in service just now. Try again in a moment." };
+  if (!auth?.claims?.sub) return { error: "Your session expired. Sign in again." };
+  const { data, error } = await db
+    .from("profiles")
+    .update({ display_name: displayName || null, bio: bio || null, website: website || null })
+    .eq("user_id", auth.claims.sub)
+    .select("username")
+    .maybeSingle();
+  if (error || !data) return { error: error?.message ?? "Could not save your profile." };
+  revalidatePath(`/${data.username}`);
+  revalidatePath("/settings/profile");
+  return { notice: "Profile saved." };
+}
+
 export async function deleteAccount(_prev: FormState, form: FormData): Promise<FormState> {
   const db = await createClient();
   const { error } = await db.rpc("delete_my_account", { p_confirm: String(form.get("confirm") ?? "").trim() });
