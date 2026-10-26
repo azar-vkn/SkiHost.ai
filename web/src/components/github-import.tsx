@@ -182,7 +182,8 @@ export function GitHubImport({ username, initialUrl = "" }: { username: string; 
                       <span className="font-semibold">{c.name}</span>
                       <TypeBadge type={c.type} />
                       <span className="text-xs text-faint">
-                        {c.fileCount} files{c.size ? ` · ${formatBytes(c.size)}` : ""}
+                        {c.fileCount} {c.fileCount === 1 ? "file" : "files"}
+                        {c.size ? ` · ${formatBytes(c.size)}` : ""}
                       </span>
                       {c.tooBig && (
                         <span className="rounded-full border border-warning/50 px-1.5 text-[0.7rem] text-warning">over 20 MB, can&apos;t import</span>
