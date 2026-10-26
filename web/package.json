@@ -15,7 +15,8 @@
     "make-admin": "node scripts/make-admin.mjs",
     "test": "vitest run",
     "smoke": "node scripts/smoke.mjs",
-    "db:lockdown": "node scripts/lockdown.mjs"
+    "db:lockdown": "node scripts/lockdown.mjs",
+    "import:github": "node scripts/import-github-racks.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
